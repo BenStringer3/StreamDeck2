@@ -6,7 +6,18 @@
   "apps": [
     {
       "name": "Desktop",
+      "cmd": "openbox-session",
       "output": "desktop.log"
+    },
+    {
+      "name": "Steam Big Picture",
+      "cmd": "steam -bigpicture",
+      "output": "steam-bp.log"
+    },
+    {
+      "name": "Horizon Forbidden West",
+      "cmd": "steam steam://rungameid/1151640",
+      "output": "hfw.log"
     }
   ]
 }
