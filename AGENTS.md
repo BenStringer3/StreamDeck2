@@ -12,7 +12,11 @@ This document defines the style and invariants for cursor-agent contributions to
 
 4. **Logging**: Use structured logging with clear levels (INFO, WARN, ERROR). Log important state changes and failures.
 
-5. **Separation of concerns**: Keep streaming session isolated from desktop session. Don't modify user's normal desktop configuration unless explicitly required.
+5. **Diagnostics**: Use `collect-logs.sh` when debugging issues or gathering system state. When adding new components, services, or log sources, update `collect-logs.sh` to include them. Keep the script synchronized with the system's diagnostic needs.
+
+6. **Separation of concerns**: Keep streaming session isolated from desktop session. Don't modify user's normal desktop configuration unless explicitly required.
+
+7. **Scientific method**: Employ the scientific method. think critically about if your assumptions are accurate, generate hypotheses and test them with experiments. 
 
 ## Code Style
 
@@ -26,6 +30,15 @@ This document defines the style and invariants for cursor-agent contributions to
 - All scripts should be testable in isolation
 - Use `test-full-cycle.sh` as the primary validation path
 - Health checks must be actionable (tell user what's wrong and how to fix)
+
+## Experiments
+
+- Use `experiment.sh` to validate hypotheses before making assumptions about system behavior
+- Modify `experiment.sh` to reflect current hypotheses and test scenarios
+- The script must handle setup, execution, and teardown of test scenarios
+- Collect high-signal information to inform decisions rather than assuming system state
+- Document hypotheses and findings within the script
+- When sudo is required for commands, prompt the user to run it with with `sudo ./experiment.sh`
 
 ## Configuration Files
 
