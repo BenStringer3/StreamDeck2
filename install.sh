@@ -51,6 +51,19 @@ pacman -Sy --noconfirm --needed \
     nvidia-utils \
     wl-clipboard || log_fatal "Failed to install dependencies"
 
+# Install sunshine from AUR (idempotent)
+log_info "Installing sunshine from AUR..."
+if ! pacman -Q sunshine &>/dev/null; then
+    # Check if yay is available
+    if ! command -v yay &>/dev/null; then
+        log_fatal "yay AUR helper not found. Please install yay first: pacman -S --needed base-devel git && cd /tmp && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si"
+    fi
+    # Install sunshine from AUR (yay handles dropping root privileges automatically)
+    yay -S --needed --noconfirm sunshine || log_fatal "Failed to install sunshine from AUR"
+else
+    log_info "sunshine is already installed"
+fi
+
 # Create streamdeck user if it doesn't exist
 if ! id "$STREAM_USER" &>/dev/null; then
     log_info "Creating user: $STREAM_USER"
@@ -106,13 +119,15 @@ fi
 
 # Install systemd units
 log_info "Installing systemd units..."
-systemctl daemon-reload
+
+# Stop existing services before updating (idempotent - won't fail if not running)
+systemctl stop streamdeck-sunshine.service 2>/dev/null || true
+systemctl stop streamdeck-xorg.service 2>/dev/null || true
 
 # Install xorg service
 XORG_UNIT="$REPO_ROOT/systemd/streamdeck-xorg.service"
 if [[ -f "$XORG_UNIT" ]]; then
     cp "$XORG_UNIT" /etc/systemd/system/
-    systemctl daemon-reload
     log_info "Installed streamdeck-xorg.service"
 else
     log_fatal "Xorg unit not found: $XORG_UNIT"
@@ -122,22 +137,33 @@ fi
 SUNSHINE_UNIT="$REPO_ROOT/systemd/streamdeck-sunshine.service"
 if [[ -f "$SUNSHINE_UNIT" ]]; then
     cp "$SUNSHINE_UNIT" /etc/systemd/system/
-    systemctl daemon-reload
     log_info "Installed streamdeck-sunshine.service"
 else
     log_fatal "Sunshine unit not found: $SUNSHINE_UNIT"
 fi
+
+# Reload systemd after installing all units
+systemctl daemon-reload
 
 # Enable services
 log_info "Enabling services..."
 systemctl enable streamdeck-xorg.service
 systemctl enable streamdeck-sunshine.service
 
+# Kill any stray Sunshine processes that might conflict
+log_info "Checking for conflicting Sunshine processes..."
+if pgrep -u "$STREAM_USER" sunshine &>/dev/null; then
+    log_warn "Found existing Sunshine processes, stopping them..."
+    pkill -u "$STREAM_USER" sunshine || true
+    sleep 1
+fi
+
 # Start services
 log_info "Starting services..."
 systemctl restart streamdeck-xorg.service || log_error "Failed to start streamdeck-xorg"
 sleep 2  # Give Xorg time to start
 systemctl restart streamdeck-sunshine.service || log_error "Failed to start streamdeck-sunshine"
+sleep 12  # Give Sunshine time to initialize, test encoders, and recover from system tray crashes
 
 # Health checks
 log_info "Running health checks..."
