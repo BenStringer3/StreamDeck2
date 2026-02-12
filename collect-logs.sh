@@ -37,7 +37,7 @@ fi
 
 # Xorg log
 log_info "Collecting Xorg log..."
-XORG_LOG="/var/log/Xorg.99.log"
+XORG_LOG="/var/log/streamdeck/Xorg.99.log"
 if [[ -f "$XORG_LOG" ]]; then
     cp "$XORG_LOG" "$LOG_DIR/Xorg.99.log"
 else
