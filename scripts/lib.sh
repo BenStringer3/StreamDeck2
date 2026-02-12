@@ -129,6 +129,31 @@ get_kernel_version() {
     uname -a
 }
 
+# Detect installed NVIDIA driver package
+# Returns the package name if found, empty string if not found
+detect_nvidia_driver() {
+    # Check for common NVIDIA driver packages
+    local drivers=(
+        "nvidia-open-dkms"
+        "nvidia-open"
+        "nvidia-open-lts"
+        "nvidia"
+        "nvidia-dkms"
+        "nvidia-lts"
+        "nvidia-580xx-dkms"
+    )
+    
+    for driver in "${drivers[@]}"; do
+        if pacman -Q "$driver" &>/dev/null; then
+            echo "$driver"
+            return 0
+        fi
+    done
+    
+    # No driver package found
+    return 1
+}
+
 # Path resolution
 get_repo_root() {
     local script_dir

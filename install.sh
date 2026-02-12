@@ -33,23 +33,32 @@ if systemctl list-units --type=service --all | grep -q "sunshine.service"; then
     log_warn "Existing sunshine.service found - may conflict with streamdeck-sunshine"
 fi
 
+# Detect NVIDIA driver
+log_info "Detecting NVIDIA driver..."
+INSTALLED_NVIDIA_DRIVER=""
+if INSTALLED_NVIDIA_DRIVER=$(detect_nvidia_driver); then
+    log_info "Found installed NVIDIA driver: $INSTALLED_NVIDIA_DRIVER"
+else
+    log_fatal "No NVIDIA driver package detected. Please install one of: nvidia-open-dkms, nvidia-open, nvidia, nvidia-dkms"
+fi
+
 # Install dependencies
 log_info "Installing dependencies..."
+# Only install nvidia-utils (provides nvidia-smi) - skip kernel driver package since it's already installed
 pacman -Sy --noconfirm --needed \
     xorg-server \
     xorg-xrandr \
-    nvidia \
     nvidia-utils \
     wl-clipboard || log_fatal "Failed to install dependencies"
 
 # Create streamdeck user if it doesn't exist
 if ! id "$STREAM_USER" &>/dev/null; then
     log_info "Creating user: $STREAM_USER"
-    useradd -r -m -s /bin/bash -G video,input "$STREAM_USER" || log_fatal "Failed to create user"
+    useradd -r -m -s /bin/bash -G video,input,tty "$STREAM_USER" || log_fatal "Failed to create user"
 else
     log_info "User $STREAM_USER already exists"
-    # Ensure user is in required groups
-    usermod -aG video,input "$STREAM_USER" || true
+    # Ensure user is in required groups (including tty for VT access if needed)
+    usermod -aG video,input,tty "$STREAM_USER" || true
 fi
 
 # Create directories
