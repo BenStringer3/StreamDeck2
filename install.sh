@@ -45,9 +45,11 @@ fi
 # Install dependencies
 log_info "Installing dependencies..."
 # Only install nvidia-utils (provides nvidia-smi) - skip kernel driver package since it's already installed
+# xf86-video-dummy: provides dummy driver for headless Xorg without DRM master conflicts
 pacman -Sy --noconfirm --needed \
     xorg-server \
     xorg-xrandr \
+    xf86-video-dummy \
     nvidia-utils \
     wl-clipboard || log_fatal "Failed to install dependencies"
 
@@ -80,8 +82,37 @@ mkdir -p /etc/X11/xorg.conf.d
 mkdir -p /etc/X11/edid
 mkdir -p /home/"$STREAM_USER"/.config/sunshine
 mkdir -p /var/log/sunshine
+mkdir -p /var/log/streamdeck
 chown -R "$STREAM_USER:$STREAM_USER" /home/"$STREAM_USER"/.config
 chown -R "$STREAM_USER:$STREAM_USER" /var/log/sunshine
+chown -R "$STREAM_USER:$STREAM_USER" /var/log/streamdeck
+
+# Configure Xwrapper to allow non-console users to run Xorg
+# This is required for the streamdeck user to start Xorg from systemd
+log_info "Configuring Xwrapper..."
+cat > /etc/X11/Xwrapper.config <<EOF
+# Allow any user to run Xorg (required for systemd service running as streamdeck user)
+# Security: The streamdeck user is restricted and only runs the isolated streaming session
+allowed_users=anybody
+EOF
+
+# Verify Xwrapper config was created
+if [[ ! -f /etc/X11/Xwrapper.config ]]; then
+    log_fatal "Failed to create /etc/X11/Xwrapper.config"
+fi
+log_info "Xwrapper configured: $(cat /etc/X11/Xwrapper.config | grep allowed_users)"
+
+# Install udev rule for tty device access
+log_info "Installing udev rule for tty access..."
+if [[ -f "$REPO_ROOT/udev/99-streamdeck-tty.rules" ]]; then
+    cp "$REPO_ROOT/udev/99-streamdeck-tty.rules" /etc/udev/rules.d/
+    # Reload udev rules and trigger for all tty devices
+    udevadm control --reload-rules
+    udevadm trigger --subsystem-match=tty
+    log_info "Installed udev rule for tty device access"
+else
+    log_warn "udev rule not found: $REPO_ROOT/udev/99-streamdeck-tty.rules"
+fi
 
 # Install Xorg config
 log_info "Installing Xorg configuration..."

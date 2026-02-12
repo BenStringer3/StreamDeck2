@@ -14,6 +14,10 @@ Environment="DISPLAY=:99"
 Environment="SUNSHINE_CONFIG_DIR=/home/streamdeck/.config/sunshine"
 # Sunshine log directory
 Environment="SUNSHINE_LOG_DIR=/var/log/sunshine"
+# PRIME offload: use NVIDIA GPU for rendering/encoding even with dummy X driver
+Environment="__NV_PRIME_RENDER_OFFLOAD=1"
+Environment="__GLX_VENDOR_LIBRARY_NAME=nvidia"
+Environment="__VK_LAYER_NV_optimus=NVIDIA_only"
 WorkingDirectory=/home/streamdeck
 ExecStart=/usr/bin/sunshine
 Restart=on-failure
