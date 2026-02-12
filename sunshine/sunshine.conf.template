@@ -1,0 +1,27 @@
+# Sunshine configuration for Stream Deck streaming
+# Capture method: X11 capture backend (XCB)
+# This captures the dedicated Xorg display :99
+capture = x11
+
+# X11 display to capture (must match systemd service DISPLAY)
+# This is the dedicated streaming display, isolated from desktop session
+x11_display = :99
+
+# Encoder: NVIDIA NVENC hardware encoding
+encoder = nvenc
+
+# Force Sunshine to use the NVIDIA 3090 Ti for NVENC (PCI bus id)
+# Format: 00000000:BB:DD.F (Bus:Device.Function in hex)
+adapter_name = 00000000:01:00.0
+
+# Log directory (must be writable by streamdeck user)
+# Logs will be collected by collect-logs.sh
+log_dir = /var/log/sunshine
+
+# Web UI settings (optional, for pairing/config)
+# Port range for streaming (default Sunshine ports)
+port = 47989
+# Web UI port (for pairing)
+web_port = 47984
+
+# Note: Resolution is controlled by Xorg configuration (1280x800)

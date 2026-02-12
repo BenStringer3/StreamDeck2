@@ -1,0 +1,25 @@
+[Unit]
+Description=Stream Deck Sunshine Server
+Documentation=https://github.com/lizardbyte/sunshine
+After=streamdeck-xorg.service
+Requires=streamdeck-xorg.service
+
+[Service]
+Type=simple
+User=streamdeck
+Group=streamdeck
+# Bind Sunshine to the streaming X display
+Environment="DISPLAY=:99"
+# Sunshine config directory
+Environment="SUNSHINE_CONFIG_DIR=/home/streamdeck/.config/sunshine"
+# Sunshine log directory
+Environment="SUNSHINE_LOG_DIR=/var/log/sunshine"
+WorkingDirectory=/home/streamdeck
+ExecStart=/usr/bin/sunshine
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

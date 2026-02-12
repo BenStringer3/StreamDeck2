@@ -1,0 +1,39 @@
+# Xorg configuration for Stream Deck headless streaming session
+# This config creates a virtual display on DP-3 using EDID override
+# Resolution: 1280x800 (Steam Deck native)
+
+Section "ServerLayout"
+    Identifier     "StreamDeckLayout"
+    Screen         0 "StreamDeckScreen" 0 0
+EndSection
+
+Section "Monitor"
+    Identifier     "StreamDeckMonitor"
+    # Use DP-3 output (EDID override will be applied in Device section if file exists)
+    Option         "ConnectedMonitor" "DP-3"
+    Option         "Ignore" "false"
+EndSection
+
+Section "Device"
+    Identifier     "StreamDeckGPU"
+    Driver         "nvidia"
+    BusID          "PCI:1:0:0"
+    # Allow Xorg to start without physical monitor (required for headless)
+    Option         "AllowEmptyInitialConfiguration" "true"
+    # Use DP-3 output
+    Option         "ConnectedMonitor" "DP-3"
+    # Custom EDID path (optional - only applied if file exists)
+    # If EDID file doesn't exist, AllowEmptyInitialConfiguration will handle it
+    Option         "CustomEDID" "DP-3:/etc/X11/edid/steamdeck-edid.bin"
+EndSection
+
+Section "Screen"
+    Identifier     "StreamDeckScreen"
+    Device         "StreamDeckGPU"
+    Monitor        "StreamDeckMonitor"
+    DefaultDepth    24
+    SubSection     "Display"
+        Depth       24
+        Modes       "1280x800"
+    EndSubSection
+EndSection

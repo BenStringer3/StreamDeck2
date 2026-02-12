@@ -1,0 +1,12 @@
+{
+  "env": {
+    "PATH": "$PATH:$HOME/.local/bin",
+    "DISPLAY": ":99"
+  },
+  "apps": [
+    {
+      "name": "Desktop",
+      "output": "desktop.log"
+    }
+  ]
+}
