@@ -5,19 +5,23 @@ After=graphical.target
 Wants=graphical.target
 
 [Service]
-Type=notify
+# Type=simple because Xorg doesn't support systemd notify protocol
+Type=simple
 User=streamdeck
 Group=streamdeck
 # Xorg needs to run on a specific display
 Environment="DISPLAY=:99"
-# Xorg log location
-Environment="XORG_LOG=/var/log/Xorg.99.log"
+# Xorg log location (in streamdeck-owned directory)
+Environment="XORG_LOG=/var/log/streamdeck/Xorg.99.log"
 # Use the generated Xorg config
+# -config: use our dummy driver config
+# -configdir "": prevent loading additional configs (avoids NVIDIA driver conflicts)
 # -nolisten tcp: disable network connections for security
-# vt8: use virtual terminal 8 (adjust if conflicts with other VTs)
-ExecStart=/usr/bin/Xorg :99 -config /etc/X11/xorg.conf.d/99-streamdeck.conf -logfile ${XORG_LOG} -nolisten tcp vt8
-# Notify systemd when ready
-ExecStartPost=/bin/sh -c 'DISPLAY=:99 xrandr --query > /dev/null 2>&1 && systemd-notify --ready || exit 1'
+# -novtswitch: don't switch VTs
+# -sharevts: allow running without exclusive VT access
+ExecStart=/usr/bin/Xorg :99 -config /etc/X11/xorg.conf.d/99-streamdeck.conf -configdir "" -logfile ${XORG_LOG} -nolisten tcp -novtswitch -sharevts
+# Wait for Xorg to be ready before considering the service started
+ExecStartPost=/bin/sh -c 'for i in {1..30}; do DISPLAY=:99 xrandr --query > /dev/null 2>&1 && exit 0; sleep 0.5; done; exit 1'
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

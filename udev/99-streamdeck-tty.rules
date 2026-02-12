@@ -1,0 +1,3 @@
+# Allow tty group to access tty devices for headless Xorg
+# This is required for non-root Xorg instances to parse VT settings and access VTs
+KERNEL=="tty[0-9]*", GROUP="tty", MODE="0660"
