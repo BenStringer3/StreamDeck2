@@ -165,11 +165,72 @@ cat "$SUMMARY_FILE"
 # Copy to clipboard
 log_info ""
 log_info "Copying summary to clipboard..."
+
+# Detect display server and use appropriate clipboard tool
+CLIPBOARD_COPIED=0
+
+# Get current user ID (handle sudo context)
+CURRENT_UID="${SUDO_UID:-$(id -u)}"
+RUNTIME_DIR="/run/user/$CURRENT_UID"
+
+# Try Wayland clipboard
 if command -v wl-copy &>/dev/null; then
-    cat "$SUMMARY_FILE" | wl-copy
-    log_info "✓ Summary copied to clipboard"
-else
-    log_warn "wl-copy not available - summary saved to: $SUMMARY_FILE"
+    # Set XDG_RUNTIME_DIR if not set but runtime dir exists
+    if [[ -z "${XDG_RUNTIME_DIR:-}" ]] && [[ -d "$RUNTIME_DIR" ]]; then
+        export XDG_RUNTIME_DIR="$RUNTIME_DIR"
+    fi
+    
+    # Set WAYLAND_DISPLAY if not set (try common values)
+    if [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
+        # Check for existing wayland socket in runtime dir
+        if [[ -n "${XDG_RUNTIME_DIR:-}" ]] && [[ -d "${XDG_RUNTIME_DIR}" ]]; then
+            for socket in "${XDG_RUNTIME_DIR}"/wayland-*; do
+                if [[ -S "$socket" ]]; then
+                    export WAYLAND_DISPLAY="$(basename "$socket")"
+                    break
+                fi
+            done
+        fi
+        # Fallback to wayland-0 if no socket found
+        export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+    fi
+    
+    # Try copying via Wayland
+    if cat "$SUMMARY_FILE" | wl-copy 2>/dev/null; then
+        log_info "✓ Summary copied to clipboard (Wayland)"
+        CLIPBOARD_COPIED=1
+    fi
+fi
+
+# Try X11 clipboard if Wayland didn't work
+if [[ $CLIPBOARD_COPIED -eq 0 ]]; then
+    # Detect X11 display
+    X11_DISPLAY="${DISPLAY:-}"
+    if [[ -z "$X11_DISPLAY" ]]; then
+        # Try to find X11 socket
+        if [[ -S "/tmp/.X11-unix/X0" ]]; then
+            X11_DISPLAY=":0"
+        fi
+    fi
+    
+    if [[ -n "$X11_DISPLAY" ]]; then
+        export DISPLAY="$X11_DISPLAY"
+        if command -v xclip &>/dev/null; then
+            if cat "$SUMMARY_FILE" | xclip -selection clipboard 2>/dev/null; then
+                log_info "✓ Summary copied to clipboard (X11 via xclip)"
+                CLIPBOARD_COPIED=1
+            fi
+        elif command -v xsel &>/dev/null; then
+            if cat "$SUMMARY_FILE" | xsel --clipboard --input 2>/dev/null; then
+                log_info "✓ Summary copied to clipboard (X11 via xsel)"
+                CLIPBOARD_COPIED=1
+            fi
+        fi
+    fi
+fi
+
+if [[ $CLIPBOARD_COPIED -eq 0 ]]; then
+    log_warn "Clipboard not available - summary saved to: $SUMMARY_FILE"
 fi
 
 log_info ""
