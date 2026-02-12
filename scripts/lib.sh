@@ -44,13 +44,18 @@ check_nvidia_smi() {
 }
 
 check_nvenc() {
-    # Check if NVENC is available via ffmpeg or nvidia-smi
+    # Check if NVENC is available by checking Sunshine logs for successful encoder detection
+    # This is more reliable than checking ffmpeg directly since Sunshine uses PRIME offload
+    if journalctl -u streamdeck-sunshine.service --no-pager -n 200 2>/dev/null | grep -E "Found H.264 encoder.*nvenc|Found HEVC encoder.*nvenc" >/dev/null; then
+        return 0
+    fi
+    # Fallback: check if ffmpeg has nvenc encoders
     if command -v ffmpeg &>/dev/null; then
-        if ffmpeg -hide_banner -encoders 2>/dev/null | grep -q "h264_nvenc\|hevc_nvenc"; then
+        if ffmpeg -hide_banner -encoders 2>/dev/null | grep -E "h264_nvenc|hevc_nvenc" >/dev/null; then
             return 0
         fi
     fi
-    # Fallback: check nvidia-smi for encoder support
+    # Last resort: check nvidia-smi for encoder support
     if nvidia-smi --query-gpu=encoder.stats.session_count --format=csv,noheader &>/dev/null; then
         return 0
     fi
@@ -86,8 +91,19 @@ check_sunshine_service() {
 }
 
 check_sunshine_logs() {
+    # Check journalctl for successful Sunshine startup with encoder detection
+    # Note: Use grep -E ... >/dev/null instead of grep -qE to avoid SIGPIPE issues in pipelines
+    if journalctl -u streamdeck-sunshine.service --no-pager -n 100 2>/dev/null | grep -E "Found H.264 encoder|Found HEVC encoder" >/dev/null; then
+        # Check for port conflicts which would prevent operation
+        if journalctl -u streamdeck-sunshine.service --no-pager -n 50 2>/dev/null | grep -E "Address already in use" >/dev/null; then
+            log_error "Sunshine has port conflict - another instance may be running"
+            return 1
+        fi
+        return 0
+    fi
+    # Fallback: check log files
     local log_dir="${SUNSHINE_LOG_DIR:-/var/log/sunshine}"
-    if [[ -f "$log_dir/sunshine.log" ]] && grep -q "Sunshine version" "$log_dir/sunshine.log" 2>/dev/null; then
+    if [[ -f "$log_dir/sunshine.log" ]] && grep -E "Sunshine version" "$log_dir/sunshine.log" >/dev/null 2>&1; then
         return 0
     fi
     log_error "Sunshine logs not found or don't show successful startup"
