@@ -24,4 +24,8 @@ port = 47989
 # Web UI port (for pairing)
 web_port = 47984
 
+# Disable system tray (causes crashes in headless environment without GUI dependencies)
+# The system tray requires GTK and bwrap which aren't available in the streamdeck user session
+system_tray = 0
+
 # Note: Resolution is controlled by Xorg configuration (1280x800)
