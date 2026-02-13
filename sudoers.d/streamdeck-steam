@@ -1,0 +1,7 @@
+# Allow streamdeck user to run steam as __BUDDY_USER__ without password or TTY
+# This enables the streaming session to launch Steam with __BUDDY_USER__'s library
+# !requiretty: Allow execution without a TTY (needed for systemd service)
+# env_keep: Preserve environment variables needed for Steam to function
+Defaults:streamdeck !requiretty
+Defaults:streamdeck env_keep += "HOME USER XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS DISPLAY"
+streamdeck ALL=(__BUDDY_USER__) NOPASSWD: /usr/bin/steam

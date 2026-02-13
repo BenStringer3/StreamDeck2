@@ -102,6 +102,17 @@ if [[ ! -f /etc/X11/Xwrapper.config ]]; then
 fi
 log_info "Xwrapper configured: $(cat /etc/X11/Xwrapper.config | grep allowed_users)"
 
+# Configure sudo to allow streamdeck user to run steam as __BUDDY_USER__
+# This enables launching Steam with __BUDDY_USER__'s library from the streaming session
+log_info "Configuring sudoers for Steam access..."
+if [[ -f "$REPO_ROOT/sudoers.d/streamdeck-steam" ]]; then
+    install -m 0440 "$REPO_ROOT/sudoers.d/streamdeck-steam" /etc/sudoers.d/streamdeck-steam
+    visudo -c -f /etc/sudoers.d/streamdeck-steam || log_fatal "Invalid sudoers file"
+    log_info "Sudoers configured for Steam access"
+else
+    log_warn "sudoers.d/streamdeck-steam not found, skipping"
+fi
+
 # Install udev rule for tty device access
 log_info "Installing udev rule for tty access..."
 if [[ -f "$REPO_ROOT/udev/99-streamdeck-tty.rules" ]]; then
