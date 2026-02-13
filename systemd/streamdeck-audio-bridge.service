@@ -1,0 +1,24 @@
+[Unit]
+Description=Stream Deck Audio Bridge (PipeWire to ALSA Loopback)
+Documentation=file:///home/__BUDDY_USER__/streamdeck/AUDIO_IMPLEMENTATION_PLAN.md
+# Start after __BUDDY_USER__'s user session is up (provides PipeWire)
+After=user@1000.service
+Requires=user@1000.service
+# Also start with Sunshine
+Before=streamdeck-sunshine.service
+Wants=streamdeck-sunshine.service
+
+[Service]
+Type=simple
+User=__BUDDY_USER__
+Group=__BUDDY_USER__
+# Need access to __BUDDY_USER__'s PipeWire session
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
+ExecStart=/usr/local/lib/streamdeck/scripts/audio-bridge.sh
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

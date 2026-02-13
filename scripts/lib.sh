@@ -90,6 +90,14 @@ check_sunshine_service() {
     return 1
 }
 
+check_audio_bridge() {
+    if systemctl is-active --quiet streamdeck-audio-bridge.service; then
+        return 0
+    fi
+    log_error "streamdeck-audio-bridge.service is not active (__BUDDY_USER__'s PipeWire session must be running)"
+    return 1
+}
+
 check_sunshine_logs() {
     # Check journalctl for successful Sunshine startup with encoder detection
     # Note: Use grep -E ... >/dev/null instead of grep -qE to avoid SIGPIPE issues in pipelines

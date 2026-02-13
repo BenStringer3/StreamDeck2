@@ -241,6 +241,38 @@ else
     usermod -aG video,input,tty "$STREAM_USER" || true
 fi
 
+# --- Audio Bridge Setup ---
+log_info "Adding $STREAM_USER to audio group for ALSA access..."
+usermod -aG audio "$STREAM_USER" || true
+
+log_info "Configuring snd-aloop module..."
+if [[ -f "$REPO_ROOT/etc/modules-load.d/snd-aloop.conf" ]]; then
+    cp "$REPO_ROOT/etc/modules-load.d/snd-aloop.conf" /etc/modules-load.d/
+else
+    printf '# ALSA loopback for Stream Deck audio bridge\nsnd-aloop\n' > /etc/modules-load.d/snd-aloop.conf
+fi
+
+if ! lsmod | grep -q snd_aloop; then
+    modprobe snd-aloop
+fi
+
+log_info "Installing audio bridge scripts..."
+# Install to /usr/local so streamdeck user can execute (cannot traverse /home/__BUDDY_USER__)
+INSTALL_SCRIPT_DIR="/usr/local/lib/streamdeck/scripts"
+mkdir -p "$INSTALL_SCRIPT_DIR"
+install -m 0755 "$REPO_ROOT/scripts/audio-bridge.sh" "$INSTALL_SCRIPT_DIR/"
+install -m 0755 "$REPO_ROOT/scripts/audio-capture-bridge.sh" "$INSTALL_SCRIPT_DIR/"
+
+log_info "Installing audio bridge and capture services..."
+# Create streamdeck-audio runtime dir via tmpfiles (PipeWire needs it before service start)
+if [[ -f "$REPO_ROOT/etc/tmpfiles.d/streamdeck-audio.conf" ]]; then
+    install -m 0644 "$REPO_ROOT/etc/tmpfiles.d/streamdeck-audio.conf" /etc/tmpfiles.d/
+    systemd-tmpfiles --create /etc/tmpfiles.d/streamdeck-audio.conf 2>/dev/null || true
+fi
+cp "$REPO_ROOT/systemd/streamdeck-audio-bridge.service" /etc/systemd/system/
+cp "$REPO_ROOT/systemd/streamdeck-pipewire.service" /etc/systemd/system/
+cp "$REPO_ROOT/systemd/streamdeck-audio-capture.service" /etc/systemd/system/
+
 # Create directories
 log_info "Creating directories..."
 mkdir -p /etc/X11/xorg.conf.d
@@ -350,6 +382,9 @@ log_info "Installing systemd units..."
 
 # Stop existing services before updating (idempotent - won't fail if not running)
 systemctl stop streamdeck-sunshine.service 2>/dev/null || true
+systemctl stop streamdeck-audio-capture.service 2>/dev/null || true
+systemctl stop streamdeck-pipewire.service 2>/dev/null || true
+systemctl stop streamdeck-audio-bridge.service 2>/dev/null || true
 systemctl stop streamdeck-xorg.service 2>/dev/null || true
 
 substitute_systemd() {
@@ -377,13 +412,25 @@ else
     log_fatal "Sunshine unit template not found: $SUNSHINE_TPL"
 fi
 
+# Audio services installed earlier in Audio Bridge Setup
 # Reload systemd after installing all units
 systemctl daemon-reload
 
 # Enable services
 log_info "Enabling services..."
 systemctl enable streamdeck-xorg.service
+systemctl enable streamdeck-audio-bridge.service
+systemctl enable streamdeck-pipewire.service
+systemctl enable streamdeck-audio-capture.service
 systemctl enable streamdeck-sunshine.service
+
+# Start audio bridge first (hard requirement; fail-fast if __BUDDY_USER__'s session inactive)
+log_info "Starting audio bridge..."
+if ! systemctl start streamdeck-audio-bridge.service; then
+    log_error "Audio bridge failed to start (__BUDDY_USER__'s PipeWire session must be active)"
+    log_error "Next step: ensure __BUDDY_USER__ is logged in (user session running), then re-run install"
+    exit 1
+fi
 
 # Kill any stray Sunshine processes that might conflict
 log_info "Checking for conflicting Sunshine processes..."
@@ -397,6 +444,10 @@ fi
 log_info "Starting services..."
 systemctl restart streamdeck-xorg.service || log_error "Failed to start streamdeck-xorg"
 sleep 2  # Give Xorg time to start
+systemctl restart streamdeck-pipewire.service || log_error "Failed to start streamdeck-pipewire"
+sleep 2  # Give PipeWire time to create pulse socket
+systemctl restart streamdeck-audio-capture.service || log_error "Failed to start streamdeck-audio-capture"
+sleep 2  # Give capture bridge time to create sink
 systemctl restart streamdeck-sunshine.service || log_error "Failed to start streamdeck-sunshine"
 sleep 12  # Give Sunshine time to initialize, test encoders, and recover from system tray crashes
 

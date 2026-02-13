@@ -1,8 +1,10 @@
 [Unit]
 Description=Stream Deck Sunshine Server
 Documentation=https://github.com/lizardbyte/sunshine
-After=streamdeck-xorg.service
+# Sunshine starts after Xorg and audio-capture (so StreamDeck-Capture sink exists)
+After=streamdeck-xorg.service streamdeck-audio-capture.service
 Requires=streamdeck-xorg.service
+Wants=streamdeck-audio-capture.service
 
 [Service]
 Type=simple
@@ -10,6 +12,9 @@ User=__STREAM_USER__
 Group=__STREAM_GROUP__
 # Bind Sunshine to the streaming X display
 Environment="DISPLAY=__STREAM_DISPLAY__"
+# Audio capture: use streamdeck's PipeWire-Pulse (capture bridge feeds StreamDeck-Capture sink)
+Environment="PULSE_SERVER=unix:/run/streamdeck-audio/pulse/native"
+Environment="PULSE_RUNTIME_PATH=/run/streamdeck-audio"
 # Sunshine config directory
 Environment="SUNSHINE_CONFIG_DIR=__STREAM_HOME__/.config/sunshine"
 # Sunshine log directory

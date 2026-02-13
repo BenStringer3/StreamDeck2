@@ -1,0 +1,28 @@
+[Unit]
+Description=Stream Deck PipeWire-Pulse (for Sunshine audio capture)
+Documentation=file:///home/__BUDDY_USER__/streamdeck/AUDIO_IMPLEMENTATION_PLAN.md
+# Start after ALSA loopback is available (audio bridge feeds it)
+After=streamdeck-audio-bridge.service
+Wants=streamdeck-audio-bridge.service
+Before=streamdeck-audio-capture.service streamdeck-sunshine.service
+
+[Service]
+Type=simple
+User=streamdeck
+Group=streamdeck
+# PipeWire-Pulse socket for streamdeck (Sunshine connects here for audio capture)
+# Create runtime dir if missing (tmpfiles.d handles this at boot, but not mid-session)
+ExecStartPre=+/bin/mkdir -p /run/streamdeck-audio
+ExecStartPre=+/bin/chown streamdeck:streamdeck /run/streamdeck-audio
+ExecStartPre=+/bin/chmod 0700 /run/streamdeck-audio
+Environment="XDG_RUNTIME_DIR=/run/streamdeck-audio"
+# pipewire-pulse requires pipewire core; start core first, then pulse compat layer
+# Trap ensures we kill pipewire when pipewire-pulse exits (e.g. on service stop)
+ExecStart=/bin/sh -c 'pipewire & WPID=$!; sleep 2; trap "kill $WPID 2>/dev/null" EXIT; pipewire-pulse'
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

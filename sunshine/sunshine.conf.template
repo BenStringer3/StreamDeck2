@@ -7,6 +7,12 @@ capture = x11
 # This is the dedicated streaming display, isolated from desktop session
 x11_display = :99
 
+# Audio capture: Sunshine uses PulseAudio on Linux. We run PipeWire-Pulse for streamdeck
+# and feed ALSA loopback into the StreamDeck-Capture sink. This sink receives audio
+# from the capture bridge (audio-capture-bridge.sh).
+audio_sink = StreamDeck-Capture
+stream_audio = 1
+
 # Encoder: NVIDIA NVENC hardware encoding
 encoder = nvenc
 

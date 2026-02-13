@@ -54,6 +54,9 @@ fi
 if ! check_sunshine_logs; then
     HEALTH_FAILED=1
 fi
+if ! check_audio_bridge; then
+    HEALTH_FAILED=1
+fi
 
 if [[ $HEALTH_FAILED -ne 0 ]]; then
     log_error "Health checks failed - collecting logs and exiting"
@@ -167,11 +170,19 @@ SUMMARY_FILE="$LOG_DIR/summary.txt"
         echo "✗ Sunshine logs: FAIL"
     fi
     
+    if check_audio_bridge; then
+        echo "✓ Audio bridge: PASS"
+    else
+        echo "✗ Audio bridge: FAIL"
+    fi
+    
     echo ""
     echo "=== Service Status ==="
     systemctl status streamdeck-xorg.service --no-pager -l | head -n 10 || echo "Xorg service status unavailable"
     echo ""
     systemctl status streamdeck-sunshine.service --no-pager -l | head -n 10 || echo "Sunshine service status unavailable"
+    echo ""
+    systemctl status streamdeck-audio-bridge.service --no-pager -l | head -n 5 || echo "Audio bridge status unavailable"
     
     echo ""
     echo "=== Recent Errors (if any) ==="

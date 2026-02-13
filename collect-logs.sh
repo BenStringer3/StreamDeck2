@@ -29,11 +29,73 @@ fi
 log_info "Collecting systemctl status..."
 collect_systemctl_status streamdeck-xorg.service "$LOG_DIR/systemctl-xorg.status"
 collect_systemctl_status streamdeck-sunshine.service "$LOG_DIR/systemctl-sunshine.status"
+collect_systemctl_status streamdeck-audio-bridge.service "$LOG_DIR/systemctl-audio-bridge.status"
+collect_systemctl_status streamdeck-pipewire.service "$LOG_DIR/systemctl-pipewire.status"
+collect_systemctl_status streamdeck-audio-capture.service "$LOG_DIR/systemctl-audio-capture.status"
 
 # Journalctl logs
 log_info "Collecting journalctl logs..."
 collect_journalctl streamdeck-xorg.service "$LOG_DIR/journalctl-xorg.log" 200
 collect_journalctl streamdeck-sunshine.service "$LOG_DIR/journalctl-sunshine.log" 200
+collect_journalctl streamdeck-audio-bridge.service "$LOG_DIR/journalctl-audio-bridge.log" 100
+collect_journalctl streamdeck-pipewire.service "$LOG_DIR/journalctl-pipewire.log" 100
+collect_journalctl streamdeck-audio-capture.service "$LOG_DIR/journalctl-audio-capture.log" 100
+
+# --- Audio Bridge Diagnostics ---
+log_info "Collecting audio bridge state..."
+
+# ALSA state
+log_info "Collecting ALSA state..."
+{
+    echo "=== ALSA Cards ==="
+    cat /proc/asound/cards
+    echo ""
+    echo "=== snd-aloop module ==="
+    lsmod | grep snd_aloop || echo "snd_aloop not loaded"
+    echo ""
+    echo "=== Loopback Cable State ==="
+    for cable in /proc/asound/card*/cable#*; do
+        if [[ -f "$cable" ]]; then
+            echo "--- $cable ---"
+            cat "$cable"
+        fi
+    done
+} > "$LOG_DIR/alsa-state.txt" 2>&1
+
+# PipeWire/PulseAudio state (as __BUDDY_USER__)
+log_info "Collecting PipeWire state..."
+{
+    echo "=== pactl info (__BUDDY_USER__) ==="
+    sudo -u __BUDDY_USER__ XDG_RUNTIME_DIR=/run/user/1000 pactl info 2>&1 || echo "Could not run pactl info"
+    echo ""
+    echo "=== PipeWire Sinks ==="
+    sudo -u __BUDDY_USER__ XDG_RUNTIME_DIR=/run/user/1000 pactl list sinks short 2>&1 || echo "Could not list sinks"
+    echo ""
+    echo "=== PipeWire Sources ==="
+    sudo -u __BUDDY_USER__ XDG_RUNTIME_DIR=/run/user/1000 pactl list sources short 2>&1 || echo "Could not list sources"
+    echo ""
+    echo "=== StreamDeck-Bridge Sink ==="
+    sudo -u __BUDDY_USER__ XDG_RUNTIME_DIR=/run/user/1000 pactl list sinks 2>&1 | grep -A30 "StreamDeck-Bridge" || echo "StreamDeck-Bridge sink not found"
+} > "$LOG_DIR/pipewire-state.txt" 2>&1
+
+# Streamdeck PipeWire state
+log_info "Collecting streamdeck PipeWire state..."
+{
+    echo "=== pactl info (streamdeck) ==="
+    sudo -u streamdeck XDG_RUNTIME_DIR=/run/streamdeck-audio pactl info 2>&1 || echo "Could not run pactl info as streamdeck"
+    echo ""
+    echo "=== Streamdeck Sinks ==="
+    sudo -u streamdeck XDG_RUNTIME_DIR=/run/streamdeck-audio pactl list sinks short 2>&1 || echo "Could not list sinks"
+    echo ""
+    echo "=== Streamdeck Sources ==="
+    sudo -u streamdeck XDG_RUNTIME_DIR=/run/streamdeck-audio pactl list sources short 2>&1 || echo "Could not list sources"
+} > "$LOG_DIR/pipewire-streamdeck-state.txt" 2>&1
+
+# Sunshine audio config (sudo: streamdeck's config is not world-readable)
+log_info "Collecting Sunshine audio config..."
+if sudo test -f /home/streamdeck/.config/sunshine/sunshine.conf; then
+    sudo grep -iE 'audio|sink|stream' /home/streamdeck/.config/sunshine/sunshine.conf > "$LOG_DIR/sunshine-audio-config.txt" 2>&1 || true
+fi
 
 # Sunshine logs (sudo: /var/log/sunshine often owned by stream user)
 log_info "Collecting Sunshine logs..."
@@ -187,6 +249,15 @@ if [[ -f /etc/systemd/system/streamdeck-xorg.service ]]; then
 fi
 if [[ -f /etc/systemd/system/streamdeck-sunshine.service ]]; then
     cp /etc/systemd/system/streamdeck-sunshine.service "$LOG_DIR/streamdeck-sunshine.service"
+fi
+if [[ -f /etc/systemd/system/streamdeck-audio-bridge.service ]]; then
+    cp /etc/systemd/system/streamdeck-audio-bridge.service "$LOG_DIR/streamdeck-audio-bridge.service"
+fi
+if [[ -f /etc/systemd/system/streamdeck-pipewire.service ]]; then
+    cp /etc/systemd/system/streamdeck-pipewire.service "$LOG_DIR/streamdeck-pipewire.service"
+fi
+if [[ -f /etc/systemd/system/streamdeck-audio-capture.service ]]; then
+    cp /etc/systemd/system/streamdeck-audio-capture.service "$LOG_DIR/streamdeck-audio-capture.service"
 fi
 
 # Process list
