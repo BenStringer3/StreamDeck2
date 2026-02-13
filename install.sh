@@ -149,10 +149,18 @@ else
 fi
 
 # Install Sunshine apps.json
+# Template placeholders: :99 -> STREAM_DISPLAY; __EDEN_BINARY__ -> EDEN_BINARY; __TOTK_GAME_PATH__ -> TOTK_GAME_PATH.
+# Override EDEN_BINARY / TOTK_GAME_PATH to customise; unset and reinstall to remove TOTK (Eden) app.
 log_info "Installing Sunshine apps.json..."
 APPS_JSON="/home/$STREAM_USER/.config/sunshine/apps.json"
 if [[ -f "$REPO_ROOT/sunshine/apps.json.template" ]]; then
-    sed "s|:99|$STREAM_DISPLAY|g" "$REPO_ROOT/sunshine/apps.json.template" > "$APPS_JSON"
+    EDEN_BINARY="${EDEN_BINARY:-/usr/bin/eden}"
+    TOTK_GAME_PATH="${TOTK_GAME_PATH:-/home/__BUDDY_USER__/Emulation/roms/switch/The Legend of Zelda: Tears of the Kingdom.xci}"
+    escape_sed_repl() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/&/\\&/g'; }
+    sed -e "s|:99|$STREAM_DISPLAY|g" \
+        -e "s|__EDEN_BINARY__|$(escape_sed_repl "$EDEN_BINARY")|g" \
+        -e "s|__TOTK_GAME_PATH__|$(escape_sed_repl "$TOTK_GAME_PATH")|g" \
+        "$REPO_ROOT/sunshine/apps.json.template" > "$APPS_JSON"
     chown "$STREAM_USER:$STREAM_USER" "$APPS_JSON"
     log_info "Installed apps.json: $APPS_JSON"
 else
