@@ -45,7 +45,8 @@ fi
 # Install dependencies
 log_info "Installing dependencies..."
 # Only install nvidia-utils (provides nvidia-smi) - skip kernel driver package since it's already installed
-# xf86-video-dummy: provides dummy driver for headless Xorg without DRM master conflicts
+# xf86-video-dummy: dummy driver for headless Xorg; pipewire/pipewire-pulse for streamdeck audio capture
+# openbox: lightweight window manager on :99 (needed so apps can request fullscreen via EWMH)
 pacman -Sy --noconfirm --needed \
     xorg-server \
     xorg-xrandr \
@@ -154,13 +155,16 @@ fi
 #   - :99 -> STREAM_DISPLAY
 #   - __EDEN_BINARY__ -> EDEN_BINARY
 #   - __TOTK_GAME_PATH__ -> TOTK_GAME_PATH
-#   - __EDEN_XDG_CONFIG_HOME__ -> EDEN_XDG_CONFIG_HOME (streaming-only Eden config dir)
+#   - __EDEN_XDG_CONFIG_HOME__ -> EDEN_XDG_CONFIG_HOME (streaming-only Eden config; used to force fullscreen)
 # Override EDEN_* / TOTK_* to customise.
 log_info "Installing Sunshine apps.json..."
 APPS_JSON="/home/$STREAM_USER/.config/sunshine/apps.json"
 if [[ -f "$REPO_ROOT/sunshine/apps.json.template" ]]; then
     EDEN_BINARY="${EDEN_BINARY:-/usr/bin/eden}"
     TOTK_GAME_PATH="${TOTK_GAME_PATH:-/home/__BUDDY_USER__/Emulation/roms/switch/The Legend of Zelda: Tears of the Kingdom.xci}"
+    # Eden is a Qt app and persists window state; when streaming we want deterministic fullscreen.
+    # We do this by setting XDG_CONFIG_HOME for the Sunshine-launched Eden process to an isolated config directory.
+    # Eden will then read: $XDG_CONFIG_HOME/eden/qt-config.ini
     EDEN_XDG_CONFIG_HOME="${EDEN_XDG_CONFIG_HOME:-/home/__BUDDY_USER__/.config/streamdeck-eden}"
     escape_sed_repl() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/&/\\&/g'; }
     sed -e "s|:99|$STREAM_DISPLAY|g" \
@@ -171,28 +175,33 @@ if [[ -f "$REPO_ROOT/sunshine/apps.json.template" ]]; then
     chown "$STREAM_USER:$STREAM_USER" "$APPS_JSON"
     log_info "Installed apps.json: $APPS_JSON"
 
-    # Eden is a Qt app and persists window state in its config.
-    # For the streaming session we use a dedicated config dir so we can control fullscreen
-    # without changing your normal ~/.config/eden.
+    # Install a minimal Eden UI config for the streaming session (fullscreen on the dummy display).
+    # Notes:
+    # - This does not change your normal Eden config at ~/.config/eden.
+    # - Qt INI format: lines starting with '#' are comments.
     EDEN_STREAM_CFG_DIR="$EDEN_XDG_CONFIG_HOME/eden"
     mkdir -p "$EDEN_STREAM_CFG_DIR"
     cat > "$EDEN_STREAM_CFG_DIR/qt-config.ini" <<'EOF'
 # Eden (Yuzu fork) UI config for Sunshine streaming session.
-# Purpose: start fullscreen on the dummy Xorg display so the stream fills 1280x800.
+# Purpose: start in fullscreen so the stream fills the 1280x800 dummy display.
 fullscreen\default=true
 fullscreen=true
 
-# 1 = "Exclusive" on this install (matches Eden's normal config semantics).
+# Fullscreen mode selector (Eden stores this in the Qt UI config).
+# 1 = "Exclusive" on this install (matches your existing Eden config); change if Eden’s UI expects different semantics.
 fullscreen_mode\default=true
 fullscreen_mode=1
 
+# Keep Eden in single-window mode (render area within the main window).
 singleWindowMode\default=true
 singleWindowMode=true
 EOF
     chmod 0644 "$EDEN_STREAM_CFG_DIR/qt-config.ini"
     chown -R __BUDDY_USER__:__BUDDY_USER__ "$EDEN_XDG_CONFIG_HOME"
 
-    # Configure Openbox (WM on :99) to force Eden fullscreen even if Eden doesn't request it.
+    # Configure Openbox (WM on :99) to force Eden fullscreen.
+    # Rationale: Eden may persist/override its own fullscreen toggle, but the WM can enforce
+    # fullscreen on map regardless of app state.
     OPENBOX_DIR="/home/$STREAM_USER/.config/openbox"
     OPENBOX_RC="$OPENBOX_DIR/rc.xml"
     mkdir -p "$OPENBOX_DIR"
@@ -207,12 +216,14 @@ EOF
     fi
 
     if ! grep -q "StreamDeck: Eden fullscreen rule" "$OPENBOX_RC"; then
+        # Insert before the closing </applications> tag.
         sed -i '/<\/applications>/ i\
   <!-- StreamDeck: Eden fullscreen rule (streaming session only). -->\
   <!-- Eden is a Qt app; without an explicit WM rule it can open as a small window. -->\
   <application class="eden">\
     <fullscreen>yes</fullscreen>\
     <maximized>yes</maximized>\
+    <!-- Remove decorations so Moonlight sees only the game content. -->\
     <decor>no</decor>\
   </application>\
 ' "$OPENBOX_RC"
