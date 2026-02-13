@@ -1,23 +1,29 @@
 {
   "env": {
-    "PATH": "$PATH:$HOME/.local/bin",
+    "PATH": "/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin",
     "DISPLAY": ":99"
   },
   "apps": [
     {
       "name": "Desktop",
-      "cmd": "openbox-session",
+      "cmd": "xterm",
       "output": "desktop.log"
     },
     {
       "name": "Steam Big Picture",
-      "cmd": "steam -bigpicture",
+      "cmd": "sudo -u __BUDDY_USER__ HOME=/home/__BUDDY_USER__ USER=__BUDDY_USER__ XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus steam -gamepadui --disable-gpu --disable-software-rasterizer",
       "output": "steam-bp.log"
     },
     {
       "name": "Horizon Forbidden West",
-      "cmd": "steam steam://rungameid/1151640",
+      "cmd": "sudo -u __BUDDY_USER__ HOME=/home/__BUDDY_USER__ USER=__BUDDY_USER__ XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus steam steam://rungameid/2420110",
       "output": "hfw.log"
+    },
+    {
+      "name": "Satisfactory",
+      "cmd": "sudo -u __BUDDY_USER__ HOME=/home/__BUDDY_USER__ USER=__BUDDY_USER__ XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus steam steam://rungameid/526870",
+      "output": "game-526870.log"
     }
+
   ]
 }
