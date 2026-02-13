@@ -5,6 +5,11 @@
 #   - PULSE_SINK: Direct audio to the StreamDeck-Bridge sink for capture
 #   - __NV_PRIME_RENDER_OFFLOAD, __GLX_*, __VK_*: GPU rendering on dummy X display :99
 Defaults:streamdeck !requiretty
-Defaults:streamdeck env_keep += "HOME USER XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS DISPLAY PULSE_SINK __NV_PRIME_RENDER_OFFLOAD __GLX_VENDOR_LIBRARY_NAME __VK_LAYER_NV_optimus"
+# Keep only the minimal environment required for the streaming session to launch apps correctly.
+# - DISPLAY: target the isolated dummy Xorg display (e.g. :99)
+# - XDG_*: user session integration (PipeWire via XDG_RUNTIME_DIR; streaming-only Eden config via XDG_CONFIG_HOME)
+# - PULSE_SINK: route audio into the bridge/capture sink
+# - __NV_* / __GLX_* / __VK_*: NVIDIA PRIME offload for rendering on the dummy display
+Defaults:streamdeck env_keep += "HOME USER XDG_CONFIG_HOME XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS DISPLAY PULSE_SINK __NV_PRIME_RENDER_OFFLOAD __GLX_VENDOR_LIBRARY_NAME __VK_LAYER_NV_optimus"
 streamdeck ALL=(__BUDDY_USER__) NOPASSWD: /usr/bin/steam
 streamdeck ALL=(__BUDDY_USER__) NOPASSWD: /usr/bin/eden

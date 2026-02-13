@@ -1,8 +1,8 @@
 [Unit]
 Description=Stream Deck Xorg Display Server
 Documentation=https://github.com/lizardbyte/sunshine
-After=graphical.target
-Wants=graphical.target
+# This is a headless/isolated Xorg instance used only for streaming.
+# Avoid ordering cycles by not binding it to graphical.target.
 
 [Service]
 # Type=simple because Xorg doesn't support systemd notify protocol
@@ -22,6 +22,10 @@ Environment="XORG_LOG=/var/log/streamdeck/Xorg.99.log"
 ExecStart=/usr/bin/Xorg :99 -config /etc/X11/xorg.conf.d/99-streamdeck.conf -configdir "" -logfile ${XORG_LOG} -nolisten tcp -novtswitch -sharevts
 # Wait for Xorg to be ready before considering the service started
 ExecStartPost=/bin/sh -c 'for i in {1..30}; do DISPLAY=:99 xrandr --query > /dev/null 2>&1 && exit 0; sleep 0.5; done; exit 1'
+# Start a lightweight window manager on :99.
+# Many apps (including Qt apps like Eden) request fullscreen via EWMH (_NET_WM_STATE_FULLSCREEN).
+# Without a WM, those hints are ignored and you get a small centered window.
+ExecStartPost=/bin/sh -c 'DISPLAY=:99 pgrep -u streamdeck -x openbox >/dev/null 2>&1 || (DISPLAY=:99 openbox >/dev/null 2>&1 &)'
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

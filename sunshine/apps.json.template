@@ -29,7 +29,7 @@
     },
     {
       "name": "TOTK (Eden)",
-      "cmd": "sudo -u __BUDDY_USER__ HOME=/home/__BUDDY_USER__ USER=__BUDDY_USER__ XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus PULSE_SINK=StreamDeck-Bridge __EDEN_BINARY__ -g \"__TOTK_GAME_PATH__\"",
+      "cmd": "sudo -u __BUDDY_USER__ HOME=/home/__BUDDY_USER__ USER=__BUDDY_USER__ XDG_CONFIG_HOME=__EDEN_XDG_CONFIG_HOME__ XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus PULSE_SINK=StreamDeck-Bridge __EDEN_BINARY__ -g \"__TOTK_GAME_PATH__\"",
       "output": "eden-totk.log"
     }
 

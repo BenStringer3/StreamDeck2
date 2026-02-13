@@ -50,6 +50,7 @@ pacman -Sy --noconfirm --needed \
     xorg-server \
     xorg-xrandr \
     xf86-video-dummy \
+    openbox \
     nvidia-utils \
     wl-clipboard || log_fatal "Failed to install dependencies"
 
@@ -149,20 +150,73 @@ else
 fi
 
 # Install Sunshine apps.json
-# Template placeholders: :99 -> STREAM_DISPLAY; __EDEN_BINARY__ -> EDEN_BINARY; __TOTK_GAME_PATH__ -> TOTK_GAME_PATH.
-# Override EDEN_BINARY / TOTK_GAME_PATH to customise; unset and reinstall to remove TOTK (Eden) app.
+# Template placeholders:
+#   - :99 -> STREAM_DISPLAY
+#   - __EDEN_BINARY__ -> EDEN_BINARY
+#   - __TOTK_GAME_PATH__ -> TOTK_GAME_PATH
+#   - __EDEN_XDG_CONFIG_HOME__ -> EDEN_XDG_CONFIG_HOME (streaming-only Eden config dir)
+# Override EDEN_* / TOTK_* to customise.
 log_info "Installing Sunshine apps.json..."
 APPS_JSON="/home/$STREAM_USER/.config/sunshine/apps.json"
 if [[ -f "$REPO_ROOT/sunshine/apps.json.template" ]]; then
     EDEN_BINARY="${EDEN_BINARY:-/usr/bin/eden}"
     TOTK_GAME_PATH="${TOTK_GAME_PATH:-/home/__BUDDY_USER__/Emulation/roms/switch/The Legend of Zelda: Tears of the Kingdom.xci}"
+    EDEN_XDG_CONFIG_HOME="${EDEN_XDG_CONFIG_HOME:-/home/__BUDDY_USER__/.config/streamdeck-eden}"
     escape_sed_repl() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/&/\\&/g'; }
     sed -e "s|:99|$STREAM_DISPLAY|g" \
         -e "s|__EDEN_BINARY__|$(escape_sed_repl "$EDEN_BINARY")|g" \
+        -e "s|__EDEN_XDG_CONFIG_HOME__|$(escape_sed_repl "$EDEN_XDG_CONFIG_HOME")|g" \
         -e "s|__TOTK_GAME_PATH__|$(escape_sed_repl "$TOTK_GAME_PATH")|g" \
         "$REPO_ROOT/sunshine/apps.json.template" > "$APPS_JSON"
     chown "$STREAM_USER:$STREAM_USER" "$APPS_JSON"
     log_info "Installed apps.json: $APPS_JSON"
+
+    # Eden is a Qt app and persists window state in its config.
+    # For the streaming session we use a dedicated config dir so we can control fullscreen
+    # without changing your normal ~/.config/eden.
+    EDEN_STREAM_CFG_DIR="$EDEN_XDG_CONFIG_HOME/eden"
+    mkdir -p "$EDEN_STREAM_CFG_DIR"
+    cat > "$EDEN_STREAM_CFG_DIR/qt-config.ini" <<'EOF'
+# Eden (Yuzu fork) UI config for Sunshine streaming session.
+# Purpose: start fullscreen on the dummy Xorg display so the stream fills 1280x800.
+fullscreen\default=true
+fullscreen=true
+
+# 1 = "Exclusive" on this install (matches Eden's normal config semantics).
+fullscreen_mode\default=true
+fullscreen_mode=1
+
+singleWindowMode\default=true
+singleWindowMode=true
+EOF
+    chmod 0644 "$EDEN_STREAM_CFG_DIR/qt-config.ini"
+    chown -R __BUDDY_USER__:__BUDDY_USER__ "$EDEN_XDG_CONFIG_HOME"
+
+    # Configure Openbox (WM on :99) to force Eden fullscreen even if Eden doesn't request it.
+    OPENBOX_DIR="/home/$STREAM_USER/.config/openbox"
+    OPENBOX_RC="$OPENBOX_DIR/rc.xml"
+    mkdir -p "$OPENBOX_DIR"
+    if [[ ! -f "$OPENBOX_RC" ]]; then
+        if [[ -f /etc/xdg/openbox/rc.xml ]]; then
+            cp /etc/xdg/openbox/rc.xml "$OPENBOX_RC"
+        else
+            log_fatal "Openbox system config missing: /etc/xdg/openbox/rc.xml (is openbox installed?)"
+        fi
+        chown -R "$STREAM_USER:$STREAM_USER" "$OPENBOX_DIR"
+        chmod 0644 "$OPENBOX_RC"
+    fi
+
+    if ! grep -q "StreamDeck: Eden fullscreen rule" "$OPENBOX_RC"; then
+        sed -i '/<\/applications>/ i\
+  <!-- StreamDeck: Eden fullscreen rule (streaming session only). -->\
+  <!-- Eden is a Qt app; without an explicit WM rule it can open as a small window. -->\
+  <application class="eden">\
+    <fullscreen>yes</fullscreen>\
+    <maximized>yes</maximized>\
+    <decor>no</decor>\
+  </application>\
+' "$OPENBOX_RC"
+    fi
 else
     log_warn "apps.json template not found, using default"
 fi
