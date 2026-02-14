@@ -26,11 +26,11 @@ log_info "Collecting journalctl logs..."
 collect_journalctl streamdeck-xorg.service "$LOG_DIR/journalctl-xorg.log" 200
 collect_journalctl streamdeck-sunshine.service "$LOG_DIR/journalctl-sunshine.log" 200
 
-# Sunshine logs
+# Sunshine logs (sudo: /var/log/sunshine often owned by streamdeck)
 log_info "Collecting Sunshine logs..."
 SUNSHINE_LOG_DIR="/var/log/sunshine"
 if [[ -d "$SUNSHINE_LOG_DIR" ]]; then
-    cp -r "$SUNSHINE_LOG_DIR" "$LOG_DIR/sunshine-logs" 2>/dev/null || log_warn "Could not copy Sunshine logs"
+    sudo cp -r "$SUNSHINE_LOG_DIR" "$LOG_DIR/sunshine-logs" 2>/dev/null || log_warn "Could not copy Sunshine logs"
 else
     log_warn "Sunshine log directory not found: $SUNSHINE_LOG_DIR"
 fi
@@ -89,14 +89,54 @@ log_info "Collecting version information..."
     cat /etc/os-release 2>/dev/null || true
 } > "$LOG_DIR/versions.txt"
 
-# Sunshine config
+# Sunshine config and deployed apps (sudo: streamdeck's config dir is not world-readable)
 log_info "Collecting Sunshine config..."
 SUNSHINE_CONF="/home/streamdeck/.config/sunshine/sunshine.conf"
-if [[ -f "$SUNSHINE_CONF" ]]; then
-    cp "$SUNSHINE_CONF" "$LOG_DIR/sunshine.conf"
+SUNSHINE_CONFIG_DIR="/home/streamdeck/.config/sunshine"
+if sudo test -f "$SUNSHINE_CONF"; then
+    sudo cp "$SUNSHINE_CONF" "$LOG_DIR/sunshine.conf"
 else
     log_warn "Sunshine config not found: $SUNSHINE_CONF"
 fi
+if sudo test -f "$SUNSHINE_CONFIG_DIR/apps.json"; then
+    sudo cp "$SUNSHINE_CONFIG_DIR/apps.json" "$LOG_DIR/sunshine-apps.json"
+fi
+mkdir -p "$LOG_DIR/sunshine-logs"
+# App output logs (e.g. eden-totk.log) - Sunshine may write to config or log dir
+sudo bash -c "for f in $SUNSHINE_CONFIG_DIR/*.log; do [[ -f \"\$f\" ]] && cp \"\$f\" $LOG_DIR/sunshine-logs/\$(basename \"\$f\"); done" 2>/dev/null || true
+for f in /var/log/sunshine/*.log; do [[ -f "$f" ]] && sudo cp "$f" "$LOG_DIR/sunshine-logs/var-$(basename "$f")" 2>/dev/null || true; done
+# Ensure collected files are readable by the user who ran this script
+RUN_AS_UID="${SUDO_UID:-$(id -u)}"
+RUN_AS_GID="${SUDO_GID:-$(id -g)}"
+sudo chown -R "$RUN_AS_UID:$RUN_AS_GID" "$LOG_DIR/sunshine-logs" 2>/dev/null || true
+[[ -f "$LOG_DIR/sunshine.conf" ]] && sudo chown "$RUN_AS_UID:$RUN_AS_GID" "$LOG_DIR/sunshine.conf" 2>/dev/null || true
+[[ -f "$LOG_DIR/sunshine-apps.json" ]] && sudo chown "$RUN_AS_UID:$RUN_AS_GID" "$LOG_DIR/sunshine-apps.json" 2>/dev/null || true
+
+# Sunshine capture/GPU/app diagnostics (black screen, Vulkan, X11 capture, etc.)
+log_info "Collecting Sunshine capture/app diagnostics..."
+{
+    echo "=== Sunshine log tail (last 150 lines) ==="
+    if [[ -f "$LOG_DIR/sunshine-logs/sunshine.log" ]]; then
+        tail -150 "$LOG_DIR/sunshine-logs/sunshine.log" 2>/dev/null || true
+    else
+        sudo tail -150 /var/log/sunshine/sunshine.log 2>/dev/null || echo "sunshine.log not found"
+    fi
+    echo ""
+    echo "=== Grep: error, warn, fail, capture, vulkan, opengl, nvidia, x11, black, launch ==="
+    ( for f in "$LOG_DIR"/sunshine-logs/*.log; do [[ -f "$f" ]] && cat "$f"; done
+      journalctl -u streamdeck-sunshine.service -n 300 --no-pager 2>/dev/null
+    ) | grep -iE 'error|warn|fail|capture|vulkan|opengl|nvidia|prime|x11|black|eden|launch|app' || echo "(no matches)"
+    echo ""
+    echo "=== Grep: configuration, unavailable, shortcut, steam (Steam launch errors) ==="
+    ( for f in "$LOG_DIR"/sunshine-logs/*.log; do [[ -f "$f" ]] && cat "$f"; done
+      journalctl -u streamdeck-sunshine.service -n 300 --no-pager 2>/dev/null
+    ) | grep -iE 'configuration|unavailable|shortcut|steam://|game configuration' || echo "(no matches)"
+    echo ""
+    echo "=== Grep: audio (capture failure = stream has no audio) ==="
+    ( for f in "$LOG_DIR"/sunshine-logs/*.log; do [[ -f "$f" ]] && cat "$f"; done
+      journalctl -u streamdeck-sunshine.service -n 300 --no-pager 2>/dev/null
+    ) | grep -iE 'audio|pulse|pipewire|Unable to initialize audio' || echo "(no matches)"
+} > "$LOG_DIR/sunshine-diagnostics.txt" 2>&1
 
 # Systemd unit files
 log_info "Collecting systemd unit files..."
