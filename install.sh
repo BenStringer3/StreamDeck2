@@ -248,14 +248,18 @@ fi
 
 # Install udev rule for tty device access
 log_info "Installing udev rule for tty access..."
-if [[ -f "$REPO_ROOT/udev/99-streamdeck-tty.rules" ]]; then
-    cp "$REPO_ROOT/udev/99-streamdeck-tty.rules" /etc/udev/rules.d/
-    # Reload udev rules and trigger for all tty devices
+# We ship udev rules to:
+# - allow streamdeck to access tty (for Xorg/VT edge cases)
+# - isolate Sunshine virtual input devices so Moonlight input doesn't leak into the desktop session
+if compgen -G "$REPO_ROOT/udev/*.rules" >/dev/null; then
+    cp "$REPO_ROOT"/udev/*.rules /etc/udev/rules.d/
     udevadm control --reload-rules
+    # Re-apply rules to the relevant subsystems.
     udevadm trigger --subsystem-match=tty
-    log_info "Installed udev rule for tty device access"
+    udevadm trigger --subsystem-match=input
+    log_info "Installed udev rules from: $REPO_ROOT/udev/"
 else
-    log_warn "udev rule not found: $REPO_ROOT/udev/99-streamdeck-tty.rules"
+    log_warn "No udev rules found in: $REPO_ROOT/udev/"
 fi
 
 # Install Xorg config

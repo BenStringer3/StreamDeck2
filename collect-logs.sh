@@ -63,6 +63,13 @@ else
     log_warn "Xorg config not found: $XORG_CONF"
 fi
 
+# Installed udev rules (input isolation: verify GROUP=streamdeck in place)
+log_info "Collecting installed udev rules (streamdeck/sunshine)..."
+for f in /etc/udev/rules.d/*streamdeck* /etc/udev/rules.d/*sunshine* /etc/udev/rules.d/61-streamdeck*; do
+    [[ -f "$f" ]] || continue
+    sudo cp "$f" "$LOG_DIR/udev-$(basename "$f")" 2>/dev/null || true
+done
+
 # xrandr output
 log_info "Collecting xrandr output..."
 if check_xorg_display "$STREAM_DISPLAY"; then
