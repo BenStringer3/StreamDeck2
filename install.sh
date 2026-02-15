@@ -68,6 +68,142 @@ else
     log_info "sunshine is already installed"
 fi
 
+# Install MoonDeck Buddy (host helper for MoonDeck plugin). Runs as user __BUDDY_USER__; Sunshine invokes MoonDeckStream.
+log_info "Installing MoonDeck Buddy..."
+MOONDECK_APPIMAGE="/opt/moondeckbuddy/MoonDeckBuddy.AppImage"
+MOONDECK_OPT_DIR="/opt/moondeckbuddy"
+BUDDY_INSTALLED=0
+if pacman -Q moondeckbuddy-appimage &>/dev/null; then
+    log_info "moondeckbuddy-appimage already installed"
+    BUDDY_INSTALLED=1
+elif command -v yay &>/dev/null; then
+    if yay -S --needed --noconfirm moondeckbuddy-appimage; then
+        BUDDY_INSTALLED=1
+    else
+        log_warn "AUR install of moondeckbuddy-appimage failed, will try AppImage fallback"
+    fi
+else
+    log_warn "yay not available, will try AppImage fallback"
+fi
+# Fallback: install AppImage to stable path and create wrappers
+if [[ $BUDDY_INSTALLED -eq 0 ]] || ! command -v MoonDeckStream &>/dev/null; then
+    mkdir -p "$MOONDECK_OPT_DIR"
+    # Resolve latest AppImage URL from GitHub releases (requires curl)
+    MOONDECK_URL=""
+    if command -v curl &>/dev/null; then
+        MOONDECK_URL=$(curl -sL "https://api.github.com/repos/FrogTheFrog/moondeck-buddy/releases/latest" | grep -oE 'https://[^"]+MoonDeckBuddy[^"]*\.AppImage' | head -1)
+    fi
+    if [[ -z "$MOONDECK_URL" ]]; then
+        if [[ ! -x "$MOONDECK_APPIMAGE" ]]; then
+            log_fatal "MoonDeck Buddy not installed (AUR failed and could not resolve AppImage URL). Install moondeckbuddy-appimage manually or place MoonDeckBuddy.AppImage in $MOONDECK_OPT_DIR"
+        fi
+        log_info "Using existing $MOONDECK_APPIMAGE"
+    else
+        log_info "Downloading MoonDeck Buddy AppImage to $MOONDECK_APPIMAGE"
+        curl -sL -o "$MOONDECK_APPIMAGE" "$MOONDECK_URL" || log_fatal "Failed to download MoonDeck Buddy AppImage"
+        chmod +x "$MOONDECK_APPIMAGE"
+    fi
+    for bin in MoonDeckBuddy MoonDeckStream; do
+        WRAPPER="/usr/local/bin/$bin"
+        if [[ ! -x "$WRAPPER" ]] || ! grep -q "MoonDeckBuddy.AppImage" "$WRAPPER" 2>/dev/null; then
+            if [[ "$bin" == "MoonDeckStream" ]]; then
+                # MoonDeckStream must see SUNSHINE_LAUNCHED=1 or it exits 256; set it in wrapper so we don't rely on sudo env_keep
+                WRAPPER_TMP="${WRAPPER}.new.$$"
+                cat > "$WRAPPER_TMP" << 'EOF'
+#!/bin/bash
+export SUNSHINE_LAUNCHED=1
+# MoonDeckStream is a singleton; kill any stale instance so this launch can acquire the lock
+pkill -u "$(whoami)" -x MoonDeckStream 2>/dev/null || true
+sleep 0.5
+exec "MOONDECK_APPIMAGE_PLACEHOLDER" --exec MoonDeckStream "$@"
+EOF
+                sed -i "s|MOONDECK_APPIMAGE_PLACEHOLDER|$MOONDECK_APPIMAGE|g" "$WRAPPER_TMP"
+                chmod +x "$WRAPPER_TMP"
+                mv "$WRAPPER_TMP" "$WRAPPER"
+            else
+                cat > "$WRAPPER" << EOF
+#!/bin/bash
+exec "$MOONDECK_APPIMAGE" --exec $bin "\$@"
+EOF
+            fi
+            chmod +x "$WRAPPER"
+            log_info "Created $WRAPPER"
+        fi
+    done
+fi
+# Ensure /usr/local/bin wrappers exist when AUR installed (so apps.json and systemd use stable path)
+# MoonDeckStream: always a script that exports SUNSHINE_LAUNCHED=1 then execs real binary (avoids sudo env_keep issues)
+# MoonDeckBuddy: symlink to AUR binary
+for bin in MoonDeckBuddy MoonDeckStream; do
+    WRAPPER="/usr/local/bin/$bin"
+    if [[ "$bin" == "MoonDeckStream" ]]; then
+        AUR_BIN=$(PATH=/usr/bin:/bin command -v MoonDeckStream 2>/dev/null || true)
+        if [[ -n "$AUR_BIN" ]]; then
+            # Update if missing or missing SUNSHINE_LAUNCHED or missing pkill (stale-instance fix)
+            if [[ ! -f "$WRAPPER" ]] || ! grep -q "SUNSHINE_LAUNCHED" "$WRAPPER" 2>/dev/null || ! grep -q "pkill" "$WRAPPER" 2>/dev/null; then
+                WRAPPER_TMP="${WRAPPER}.new.$$"
+                cat > "$WRAPPER_TMP" << 'WRAPEOF'
+#!/bin/bash
+export SUNSHINE_LAUNCHED=1
+# Capture stderr to help debug (collect-logs.sh can include this file)
+exec 2>>/tmp/moondeckstream-stderr.log
+# MoonDeckStream is a singleton; kill any stale instance so this launch can acquire the lock (avoids exit 256 "Another instance already running")
+pkill -u "$(whoami)" -x MoonDeckStream 2>/dev/null || true
+# Brief delay so killed process releases QSharedMemory/semaphore before we start
+sleep 0.5
+exec "AUR_BIN_PLACEHOLDER" "$@"
+WRAPEOF
+                sed -i "s|AUR_BIN_PLACEHOLDER|$AUR_BIN|g" "$WRAPPER_TMP"
+                chmod +x "$WRAPPER_TMP"
+                mv "$WRAPPER_TMP" "$WRAPPER"
+                log_info "Created $WRAPPER (wraps $AUR_BIN)"
+            fi
+        fi
+    else
+        if [[ ! -x "$WRAPPER" ]]; then
+            AUR_BIN=$(PATH=/usr/bin:/bin command -v "$bin" 2>/dev/null || true)
+            if [[ -n "$AUR_BIN" ]]; then
+                ln -sf "$AUR_BIN" "$WRAPPER"
+                log_info "Linked $WRAPPER -> $AUR_BIN"
+            fi
+        fi
+    fi
+done
+if ! command -v MoonDeckBuddy &>/dev/null || ! command -v MoonDeckStream &>/dev/null; then
+    log_fatal "MoonDeck Buddy binaries not found. Ensure /usr/local/bin is on PATH and MoonDeckBuddy/MoonDeckStream are present."
+fi
+log_info "MoonDeck Buddy install OK"
+
+# Configure MoonDeck Buddy autostart as user __BUDDY_USER__ (systemd user services). Headless mode for reliability.
+BUDDY_USER="${BUDDY_USER:-__BUDDY_USER__}"
+if id "$BUDDY_USER" &>/dev/null; then
+    log_info "Configuring MoonDeck Buddy autostart for user $BUDDY_USER..."
+    # Enable autostart via CLI if supported (creates systemd user services)
+    if sudo -u "$BUDDY_USER" MoonDeckBuddy --enable-autostart 2>/dev/null; then
+        log_info "MoonDeck Buddy --enable-autostart succeeded"
+    fi
+    # Ensure headless unit runs with NO_GUI=1 so Buddy does not depend on compositor/display
+    BEN_USER_UNIT_DIR="/home/$BUDDY_USER/.config/systemd/user"
+    OVERRIDE_DIR="$BEN_USER_UNIT_DIR/moondeckbuddy.service.d"
+    mkdir -p "$OVERRIDE_DIR"
+    chown -R "$BUDDY_USER:$BUDDY_USER" "$BEN_USER_UNIT_DIR"
+    if [[ ! -f "$OVERRIDE_DIR/override.conf" ]]; then
+        cat > "$OVERRIDE_DIR/override.conf" << 'OVEREOF'
+# Force headless mode so Buddy does not crash when display/compositor is unavailable
+[Service]
+Environment=NO_GUI=1
+OVEREOF
+        chown "$BUDDY_USER:$BUDDY_USER" "$OVERRIDE_DIR/override.conf"
+        log_info "Created moondeckbuddy.service override (NO_GUI=1)"
+    fi
+    # Enable and start so first run works without reboot
+    sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$BUDDY_USER")" systemctl --user daemon-reload 2>/dev/null || true
+    sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$BUDDY_USER")" systemctl --user enable --now moondeckbuddy.service 2>/dev/null || log_warn "Could not enable moondeckbuddy.service (install Buddy and run --enable-autostart as $BUDDY_USER)"
+    sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$BUDDY_USER")" systemctl --user enable --now moondeckbuddy-gui-session.service 2>/dev/null || true
+else
+    log_warn "User $BUDDY_USER not found; skip Buddy autostart. Create user and run: sudo -u $BUDDY_USER MoonDeckBuddy --enable-autostart && systemctl --user enable --now moondeckbuddy.service"
+fi
+
 # Create streamdeck user if it doesn't exist
 if ! id "$STREAM_USER" &>/dev/null; then
     log_info "Creating user: $STREAM_USER"
@@ -150,83 +286,24 @@ else
     log_fatal "Sunshine template not found: $REPO_ROOT/sunshine/sunshine.conf.template"
 fi
 
-# Install Sunshine apps.json
-# Template placeholders:
-#   - :99 -> STREAM_DISPLAY
-#   - __EDEN_BINARY__ -> EDEN_BINARY
-#   - __TOTK_GAME_PATH__ -> TOTK_GAME_PATH
-#   - __EDEN_XDG_CONFIG_HOME__ -> EDEN_XDG_CONFIG_HOME (streaming-only Eden config; used to force fullscreen)
-# Override EDEN_* / TOTK_* to customise.
+# Install Sunshine apps.json (MoonDeck-first: MoonDeckStream + Desktop/Steam BP for debug).
+# Template placeholders: :99 -> STREAM_DISPLAY; __BUDDY_USER__ / __BUDDY_UID__ -> Buddy user and UID
+# (MoonDeckStream must run as Buddy user to share Qt shared memory/semaphore with MoonDeck Buddy)
 log_info "Installing Sunshine apps.json..."
 APPS_JSON="/home/$STREAM_USER/.config/sunshine/apps.json"
+BUDDY_UID=""
+if id "$BUDDY_USER" &>/dev/null; then
+    BUDDY_UID=$(id -u "$BUDDY_USER")
+fi
 if [[ -f "$REPO_ROOT/sunshine/apps.json.template" ]]; then
-    EDEN_BINARY="${EDEN_BINARY:-/usr/bin/eden}"
-    TOTK_GAME_PATH="${TOTK_GAME_PATH:-/home/__BUDDY_USER__/Emulation/roms/switch/The Legend of Zelda: Tears of the Kingdom.xci}"
-    # Eden is a Qt app and persists window state; when streaming we want deterministic fullscreen.
-    # We do this by setting XDG_CONFIG_HOME for the Sunshine-launched Eden process to an isolated config directory.
-    # Eden will then read: $XDG_CONFIG_HOME/eden/qt-config.ini
-    EDEN_XDG_CONFIG_HOME="${EDEN_XDG_CONFIG_HOME:-/home/__BUDDY_USER__/.config/streamdeck-eden}"
-    escape_sed_repl() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/&/\\&/g'; }
     sed -e "s|:99|$STREAM_DISPLAY|g" \
-        -e "s|__EDEN_BINARY__|$(escape_sed_repl "$EDEN_BINARY")|g" \
-        -e "s|__EDEN_XDG_CONFIG_HOME__|$(escape_sed_repl "$EDEN_XDG_CONFIG_HOME")|g" \
-        -e "s|__TOTK_GAME_PATH__|$(escape_sed_repl "$TOTK_GAME_PATH")|g" \
+        -e "s|__BUDDY_USER__|$BUDDY_USER|g" \
+        -e "s|__BUDDY_UID__|${BUDDY_UID:-0}|g" \
         "$REPO_ROOT/sunshine/apps.json.template" > "$APPS_JSON"
     chown "$STREAM_USER:$STREAM_USER" "$APPS_JSON"
     log_info "Installed apps.json: $APPS_JSON"
-
-    # Install a minimal Eden UI config for the streaming session (fullscreen on the dummy display).
-    # Notes:
-    # - This does not change your normal Eden config at ~/.config/eden.
-    # - Qt INI format: lines starting with '#' are comments.
-    EDEN_STREAM_CFG_DIR="$EDEN_XDG_CONFIG_HOME/eden"
-    mkdir -p "$EDEN_STREAM_CFG_DIR"
-    cat > "$EDEN_STREAM_CFG_DIR/qt-config.ini" <<'EOF'
-# Eden (Yuzu fork) UI config for Sunshine streaming session.
-# Purpose: start in fullscreen so the stream fills the 1280x800 dummy display.
-fullscreen\default=true
-fullscreen=true
-
-# Fullscreen mode selector (Eden stores this in the Qt UI config).
-# 1 = "Exclusive" on this install (matches your existing Eden config); change if Eden’s UI expects different semantics.
-fullscreen_mode\default=true
-fullscreen_mode=1
-
-# Keep Eden in single-window mode (render area within the main window).
-singleWindowMode\default=true
-singleWindowMode=true
-EOF
-    chmod 0644 "$EDEN_STREAM_CFG_DIR/qt-config.ini"
-    chown -R __BUDDY_USER__:__BUDDY_USER__ "$EDEN_XDG_CONFIG_HOME"
-
-    # Configure Openbox (WM on :99) to force Eden fullscreen.
-    # Rationale: Eden may persist/override its own fullscreen toggle, but the WM can enforce
-    # fullscreen on map regardless of app state.
-    OPENBOX_DIR="/home/$STREAM_USER/.config/openbox"
-    OPENBOX_RC="$OPENBOX_DIR/rc.xml"
-    mkdir -p "$OPENBOX_DIR"
-    if [[ ! -f "$OPENBOX_RC" ]]; then
-        if [[ -f /etc/xdg/openbox/rc.xml ]]; then
-            cp /etc/xdg/openbox/rc.xml "$OPENBOX_RC"
-        else
-            log_fatal "Openbox system config missing: /etc/xdg/openbox/rc.xml (is openbox installed?)"
-        fi
-        chown -R "$STREAM_USER:$STREAM_USER" "$OPENBOX_DIR"
-        chmod 0644 "$OPENBOX_RC"
-    fi
-
-    if ! grep -q "StreamDeck: Eden fullscreen rule" "$OPENBOX_RC"; then
-        # Insert before the closing </applications> tag.
-        sed -i '/<\/applications>/ i\
-  <!-- StreamDeck: Eden fullscreen rule (streaming session only). -->\
-  <!-- Eden is a Qt app; without an explicit WM rule it can open as a small window. -->\
-  <application class="eden">\
-    <fullscreen>yes</fullscreen>\
-    <maximized>yes</maximized>\
-    <!-- Remove decorations so Moonlight sees only the game content. -->\
-    <decor>no</decor>\
-  </application>\
-' "$OPENBOX_RC"
+    if ! grep -q "sudo -u $BUDDY_USER.*MoonDeckStream" "$APPS_JSON" 2>/dev/null; then
+        log_warn "MoonDeckStream app cmd may not run as $BUDDY_USER — check $APPS_JSON; exit 134 will persist if it runs as streamdeck"
     fi
 else
     log_warn "apps.json template not found, using default"
