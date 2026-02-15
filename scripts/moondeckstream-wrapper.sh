@@ -19,6 +19,15 @@ if [[ -z "${DISPLAY:-}" ]]; then
     log_wrapper "WARN: DISPLAY is not set (Sunshine typically sets DISPLAY=:99)"
 fi
 
+# Pre-launch Steam on the stream display so it is up before Buddy reacts; if Steam uses
+# singleton behavior, Buddy's later steam (e.g. game launch) will connect to this instance and run on :99.
+STEAM_BIN="/usr/bin/steam"
+if [[ -x "$STEAM_BIN" ]]; then
+    env DISPLAY=:99 WAYLAND_DISPLAY= XDG_SESSION_TYPE= "$STEAM_BIN" -gamepadui &>/dev/null &
+else
+    log_wrapper "WARN: Steam not found at $STEAM_BIN; pre-launch skipped (stream will continue)"
+fi
+
 # Defensive: real binary must exist and be executable
 REAL_BIN="__REAL_BIN__"
 if [[ ! -x "$REAL_BIN" ]]; then
