@@ -12,7 +12,7 @@ This document defines the style and invariants for cursor-agent contributions to
 
 4. **Logging**: Use structured logging with clear levels (INFO, WARN, ERROR). Log important state changes and failures.
 
-5. **Diagnostics**: Use `collect-logs.sh` when debugging issues or gathering system state. When adding new components, services, or log sources, update `collect-logs.sh` to include them. Keep the script synchronized with the system's diagnostic needs.
+5. **Diagnostics**: Log capture is automated: `install.sh` runs `collect-logs.sh` on success and on health-check failure; `test-full-cycle.sh` runs it after the manual test step, on health failure, and on SIGINT/SIGTERM (e.g. Ctrl+C). Use `collect-logs.sh` when debugging or gathering state. When adding new components, services, or log sources, update `collect-logs.sh` to include them. Keep the script synchronized with the system's diagnostic needs. Maintain `docs/troubleshooting.md`: when adding or changing components, failure modes, or fixes, update the troubleshooting document so it stays accurate and complete.
 
 6. **Separation of concerns**: Keep streaming session isolated from desktop session. Don't modify user's normal desktop configuration unless explicitly required.
 
@@ -58,3 +58,7 @@ This document defines the style and invariants for cursor-agent contributions to
 - Be specific about what failed
 - Provide next steps or references to documentation
 - Include relevant system state (e.g., "Xorg log shows: ...")
+
+## Documentation
+
+- **Troubleshooting:** Maintain `docs/troubleshooting.md`. When adding or changing components, failure modes, or fixes, update the troubleshooting document so it stays accurate and complete.
