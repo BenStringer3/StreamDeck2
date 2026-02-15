@@ -10,6 +10,16 @@ source "$REPO_ROOT/scripts/lib.sh"
 
 STREAM_DISPLAY="${STREAM_DISPLAY:-:99}"
 
+# On interrupt (e.g. Ctrl+C during manual test), collect logs then exit
+cleanup_on_interrupt() {
+    log_info ""
+    log_info "Interrupted. Collecting diagnostic logs..."
+    LOG_DIR="$("$SCRIPT_DIR/collect-logs.sh")"
+    log_info "Logs collected to: $LOG_DIR"
+    exit 130
+}
+trap cleanup_on_interrupt SIGINT SIGTERM
+
 log_info "=========================================="
 log_info "Stream Deck Full Cycle Test"
 log_info "=========================================="
@@ -55,6 +65,35 @@ fi
 log_info "✓ All health checks passed"
 log_info ""
 
+# MoonDeck Buddy and Sunshine app gates (required for MoonDeck workflow)
+BUDDY_USER="${BUDDY_USER:-__BUDDY_USER__}"
+APPS_JSON="/home/streamdeck/.config/sunshine/apps.json"
+if id "$BUDDY_USER" &>/dev/null; then
+    BEN_UID=$(id -u "$BUDDY_USER")
+    if ! sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$BEN_UID" systemctl --user is-active moondeckbuddy.service &>/dev/null; then
+        log_error "MoonDeck Buddy is not running under $BUDDY_USER. Start it with: sudo -u $BUDDY_USER systemctl --user start moondeckbuddy.service"
+        log_error "If autostart is not configured: sudo -u $BUDDY_USER MoonDeckBuddy --enable-autostart && sudo -u $BUDDY_USER systemctl --user enable --now moondeckbuddy.service"
+        exit 1
+    fi
+    log_info "✓ MoonDeck Buddy (moondeckbuddy.service) is active"
+    if [[ ! -f /tmp/moondeckbuddy.log ]]; then
+        log_warn "/tmp/moondeckbuddy.log not found (Buddy may have just started)"
+    fi
+else
+    log_warn "User $BUDDY_USER not found; skipping Buddy health gate"
+fi
+if sudo test -f "$APPS_JSON"; then
+    if ! sudo cat "$APPS_JSON" | grep -q '"name"[[:space:]]*:[[:space:]]*"MoonDeckStream"'; then
+        log_error "Sunshine apps.json does not contain MoonDeckStream. Re-run install.sh to deploy MoonDeck-first apps."
+        exit 1
+    fi
+    log_info "✓ Sunshine apps include MoonDeckStream"
+else
+    log_error "Sunshine apps.json not found at $APPS_JSON"
+    exit 1
+fi
+log_info ""
+
 # Step 3: User prompt
 log_info "=========================================="
 log_info "Step 3: Manual Test"
@@ -63,7 +102,7 @@ log_info ""
 log_info "Please perform the following:"
 log_info "  1. Open Moonlight on your Steam Deck"
 log_info "  2. Connect to this PC"
-log_info "  3. Launch an app (e.g., 'Desktop')"
+log_info "  3. Launch MoonDeckStream (or Desktop for a quick test)"
 log_info "  4. Wait for the stream to start"
 log_info "  5. Test that your local desktop still works (concurrency check)"
 log_info ""
@@ -135,7 +174,16 @@ SUMMARY_FILE="$LOG_DIR/summary.txt"
     echo "=== Recent Errors (if any) ==="
     journalctl -u streamdeck-xorg.service -n 20 --no-pager | grep -i error || echo "No recent Xorg errors"
     echo ""
-    journalctl -u streamdeck-sunshine.service -n 20 --no-pager | grep -i error || echo "No recent Sunshine errors"
+    SUNSHINE_ERR=$(journalctl -u streamdeck-sunshine.service -n 30 --no-pager | grep -i error || true)
+    if [[ -n "$SUNSHINE_ERR" ]]; then
+        echo "$SUNSHINE_ERR"
+    else
+        echo "No recent Sunshine errors"
+    fi
+    if echo "$SUNSHINE_ERR" | grep -q "Initial Ping Timeout"; then
+        echo ""
+        echo "⚠ Initial Ping Timeout: see Post-connection port state below. If UDP 47999 is (none), Sunshine is not binding the control channel — not a firewall issue."
+    fi
     
     echo ""
     echo "=== System Info ==="
@@ -152,8 +200,46 @@ SUMMARY_FILE="$LOG_DIR/summary.txt"
     fi
     
     echo ""
+    echo "=== Stream session (MoonDeckStream) ==="
+    SUNSHINE_LOG="$LOG_DIR/sunshine-logs/sunshine.log"
+    if [[ -f "$SUNSHINE_LOG" ]]; then
+        if grep -q "App exited with code \[134\]" "$SUNSHINE_LOG" 2>/dev/null; then
+            echo "⚠ App exited with code [134] (SIGABRT) — stream ended immediately after connect."
+            echo "  Root cause: run sudo ./experiment.sh to capture stderr (e.g. Qt shared memory permission denied if MoonDeckStream runs as streamdeck instead of Buddy user)."
+        fi
+        if grep -q "App exited with code \[256\]" "$SUNSHINE_LOG" 2>/dev/null; then
+            echo "⚠ App exited with code [256] — MoonDeckStream exited shortly after launch (check MoonDeckStream/Buddy compatibility and env)."
+            echo "  Check: moondeckstream-stderr.log (if present), sunshine-logs/moondeckstream.log and moondeck*.log in this log dir; README 'Desktop streams but MoonDeckStream fails'."
+        fi
+        if grep -q "Initial Ping Timeout" "$SUNSHINE_LOG" 2>/dev/null; then
+            echo "⚠ Initial Ping Timeout (Moonlight Error 11) — see Post-connection port state below; if UDP not bound, firewall is not the cause."
+            echo "  Isolate cause: try launching Desktop (not MoonDeckStream) from Moonlight; if Desktop streams, the issue is MoonDeckStream/256, not Sunshine UDP."
+        fi
+        echo "Last MoonDeckStream launch and exit from Sunshine log:"
+        grep -E "Executing:.*MoonDeckStream|App exited with code|Process terminated" "$SUNSHINE_LOG" 2>/dev/null | tail -5 || echo "(none)"
+    else
+        echo "Sunshine log not found in bundle"
+    fi
+    echo ""
+    echo "=== MoonDeck Buddy ==="
+    if id "$BUDDY_USER" &>/dev/null; then
+        BEN_UID=$(id -u "$BUDDY_USER")
+        if sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$BEN_UID" systemctl --user is-active moondeckbuddy.service &>/dev/null; then
+            echo "✓ moondeckbuddy.service: active"
+        else
+            echo "✗ moondeckbuddy.service: not active"
+        fi
+        if [[ -f "$LOG_DIR/moondeck-diagnostics.txt" ]]; then
+            echo ""
+            echo "MoonDeck/Buddy grep summary (see $LOG_DIR/moondeck-diagnostics.txt for full output):"
+            tail -20 "$LOG_DIR/moondeck-diagnostics.txt" 2>/dev/null || true
+        fi
+    else
+        echo "User $BUDDY_USER not found"
+    fi
+    echo ""
     echo "=== Full logs location ==="
-    echo "$LOG_DIR"
+    echo "$LOG_DIR (includes moondeck*.log and moondeck-diagnostics.txt when collect-logs ran)"
     echo ""
     echo "=========================================="
     
