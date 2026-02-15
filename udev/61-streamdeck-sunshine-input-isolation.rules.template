@@ -13,10 +13,12 @@
 # - GROUP="__STREAM_GROUP__" MODE="0660" so only the stream user (and root) can open these devices.
 #   The stream user's primary group should match; the desktop user is not in that group.
 # - Sunshine virtual gamepad is isolated the same way so the stream display can use it for Eden.
+#
+# Use SUBSYSTEM (not SUBSYSTEMS): for /dev/input/event* the device's subsystem is "input".
 
-SUBSYSTEMS=="input", ATTRS{name}=="Mouse passthrough", GROUP="__STREAM_GROUP__", MODE="0660", TAG-="uaccess"
-SUBSYSTEMS=="input", ATTRS{name}=="Mouse passthrough (absolute)", GROUP="__STREAM_GROUP__", MODE="0660", TAG-="uaccess"
-SUBSYSTEMS=="input", ATTRS{name}=="Keyboard passthrough", GROUP="__STREAM_GROUP__", MODE="0660", TAG-="uaccess"
-SUBSYSTEMS=="input", ATTRS{name}=="Touch passthrough", GROUP="__STREAM_GROUP__", MODE="0660", TAG-="uaccess"
-SUBSYSTEMS=="input", ATTRS{name}=="Pen passthrough", GROUP="__STREAM_GROUP__", MODE="0660", TAG-="uaccess"
-SUBSYSTEMS=="input", ATTRS{name}=="Sunshine X-Box One (virtual) pad", GROUP="__STREAM_GROUP__", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="input", ATTRS{name}=="Mouse passthrough", GROUP="__STREAM_GROUP__", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="input", ATTRS{name}=="Mouse passthrough (absolute)", GROUP="__STREAM_GROUP__", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="input", ATTRS{name}=="Keyboard passthrough", GROUP="__STREAM_GROUP__", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="input", ATTRS{name}=="Touch passthrough", GROUP="__STREAM_GROUP__", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="input", ATTRS{name}=="Pen passthrough", GROUP="__STREAM_GROUP__", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="input", ATTRS{name}=="Sunshine X-Box One (virtual) pad", GROUP="__STREAM_GROUP__", MODE="0660", TAG-="uaccess"

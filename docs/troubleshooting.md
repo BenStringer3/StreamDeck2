@@ -69,7 +69,39 @@ firewall-cmd --permanent --add-port=48010/tcp --add-port=59999/tcp
 firewall-cmd --reload
 ```
 
-## Why different errors: normal (desktop session) vs :99 (install.sh)
+## Steam Deck touchpad and PC mouse linked
+
+When you stream Big Picture (or Desktop) and use the Steam Deck touchpad, the **PC cursor and the stream cursor move together** (input “leaks” to the desktop).
+
+**Cause:** Sunshine creates virtual passthrough input devices (mouse, keyboard, gamepad). If udev leaves them as **GROUP=input** (and/or **TAGS=:seat:uaccess**), the desktop user can open them, so the compositor receives the same events as the stream → linked cursors.
+
+**Evidence (in a log bundle):** `input-pipeline-detail.txt` shows the Sunshine device (e.g. event23) with `GROUP=input` and/or `TAGS=:seat:uaccess`; `input-pipeline-summary.txt` shows “udev GROUP is 'input', expected streamdeck”.
+
+**Fix:**
+
+1. The install ships a udev rule that sets **GROUP="streamdeck"** and **TAG-="uaccess"** for Sunshine passthrough devices so only the streamdeck user (and Xorg :99) can open them. Re-run **`sudo ./install.sh`** to install the latest rule (e.g. `99-streamdeck-sunshine-input-isolation.rules`), then **reboot** so device nodes are recreated and the desktop closes open handles (reboot is required; udev reload is not enough).
+2. Remove stale udev rule if present: **`sudo rm -f /etc/udev/rules.d/61-streamdeck-sunshine-input-isolation.rules`**, then reload rules and reboot.
+3. Ensure **Steam Big Picture** runs on the stream display: the Sunshine app should pass **DISPLAY=:99** in the app command so Steam (and thus input) runs in the streamdeck session. The install template does this; if you edited apps.json, add `DISPLAY=:99` to the Steam Big Picture app cmd.
+
+After a successful fix, the summary should show "Desktop does not have Sunshine input devices open". If leakage persists after reboot: run “Xorg :99 has Sunshine device open” If leakage persists after reboot: run `sudo udevadm test $(udevadm info -q path -n /dev/input/event17)` and check the 99-streamdeck rule sets GROUP=streamdeck; `ls -l /dev/input/event17` should show group streamdeck.
+
+## Cursor doesn't move in game when using Steam Deck trackpad
+
+You stream a game (e.g. Satisfactory) and the **in-game cursor does not move** when you use the Steam Deck trackpad (mouse input is missing in the stream).
+
+**Cause:** Mouse events from Moonlight go to Sunshine's virtual "Mouse passthrough" devices. The **X server** for the stream (Xorg :99) must open those devices to deliver events to the game. If (1) **Xorg :99 never opens them** (e.g. devices appear after Xorg started and aren't added on hotplug, or permissions prevent it), or (2) the **desktop** has them open (GROUP=input / uaccess so the compositor grabs them), then the stream session never gets mouse events → cursor doesn't move in the game.
+
+**Evidence (in a log bundle):** In `input-pipeline-detail.txt`, section **"OPEN HANDLES (all Sunshine devices)"**: check who has **Mouse passthrough** and **Mouse passthrough (absolute)** (event17/18). If a desktop process (e.g. hyprland, Xwayland) has them → desktop is consuming input. If only steam/game (__BUDDY_USER__) or nobody has them and Xorg :99 does not → Xorg didn't open them (hotplug/permissions).
+
+**Fix:**
+
+1. **Udev isolation (same as "linked cursor"):** Re-run **`sudo ./install.sh`** and **reboot** so the udev rule sets GROUP=streamdeck and TAG-=uaccess. Then only the streamdeck user (Xorg :99) can open the passthrough devices; the desktop cannot grab them.
+2. **Verify udev rule applies:** If the device still shows GROUP=input after reboot, run (as root, while a client is connected):  
+   `udevadm test $(udevadm info -q path -n /dev/input/event23)`  
+   and check whether the 99-streamdeck-sunshine rule runs and sets GROUP=streamdeck.
+3. **Xorg hotplug:** If after the udev fix Xorg :99 still doesn't have the mouse devices open (see "OPEN HANDLES (all Sunshine devices)" in the next run), Xorg may not be adding them when they appear after client connect. Check `Xorg.99.log` for input-related messages when the stream starts; document or work around (e.g. ensure streamdeck user is in group that can open the devices until udev applies).
+
+## Why different errors: normal (__BUDDY_USER__ session) vs :99 (install.sh)
 
 If you run Sunshine + MoonDeck + Steam **normally** in your user session (physical monitors), you may see **"cannot initialize capture device"** when starting a stream. If you run the **install.sh** setup (Sunshine on :99, MoonDeckStream via sudo), you see **Error 11 / Initial Ping Timeout** instead. The difference is **where** the failure happens:
 

@@ -5,7 +5,7 @@
 #
 # Input isolation: only Sunshine virtual passthrough devices are used on this display.
 # Without this, Xorg would open all input devices (physical keyboard/mouse) and PC input
-# would leak into the stream session (e.g. Eden). See udev/61-streamdeck-sunshine-input-isolation.rules
+# would leak into the stream session (e.g. Eden). See udev/99-streamdeck-sunshine-input-isolation.rules
 # for the other direction (preventing Moonlight input from reaching the desktop).
 
 Section "ServerLayout"

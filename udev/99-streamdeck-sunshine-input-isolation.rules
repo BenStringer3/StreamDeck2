@@ -1,0 +1,25 @@
+# StreamDeck Sunshine input isolation (prevent input leakage).
+#
+# Problem:
+# - Sunshine creates virtual "passthrough" input devices (uinput) for Moonlight clients
+#   (Mouse passthrough, Keyboard passthrough, Touch passthrough, virtual gamepad).
+# - If these get TAG+="uaccess", logind grants the active desktop session access → Steam Deck
+#   trackpad/mouse moves the PC cursor.
+# - Even without uaccess, GROUP="input" MODE="0660" lets any user in group "input" (typically
+#   the desktop user) open the device by path, so the compositor can still receive Moonlight input.
+#
+# Fix:
+# - TAG-="uaccess" so logind does not grant desktop access.
+# - GROUP="streamdeck" MODE="0660" so only the streamdeck user (and root) can open these devices.
+#   The streamdeck user's primary group is streamdeck; the desktop user is not in that group.
+# - Sunshine virtual gamepad is isolated the same way so :99 can use it for Eden.
+#
+# Use SUBSYSTEM (not SUBSYSTEMS): for /dev/input/event* the device's subsystem is "input".
+# Number 99- ensures this runs after 60-input-id etc. so our GROUP is not overridden.
+
+SUBSYSTEM=="input", ATTRS{name}=="Mouse passthrough", GROUP="streamdeck", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="input", ATTRS{name}=="Mouse passthrough (absolute)", GROUP="streamdeck", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="input", ATTRS{name}=="Keyboard passthrough", GROUP="streamdeck", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="input", ATTRS{name}=="Touch passthrough", GROUP="streamdeck", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="input", ATTRS{name}=="Pen passthrough", GROUP="streamdeck", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="input", ATTRS{name}=="Sunshine X-Box One (virtual) pad", GROUP="streamdeck", MODE="0660", TAG-="uaccess"
