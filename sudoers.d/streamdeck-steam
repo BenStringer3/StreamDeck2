@@ -12,7 +12,9 @@ Defaults:streamdeck !requiretty
 # - PULSE_SINK: route audio into the bridge/capture sink
 # - __NV_* / __GLX_* / __VK_*: NVIDIA PRIME offload for rendering on the dummy display
 # - SUNSHINE_LAUNCHED: MoonDeckStream stream helper only stays running if it sees a SUNSHINE.* env var
-Defaults:streamdeck env_keep += "HOME USER XDG_CONFIG_HOME XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS DISPLAY PULSE_SINK SUNSHINE_LAUNCHED __NV_PRIME_RENDER_OFFLOAD __GLX_VENDOR_LIBRARY_NAME __VK_LAYER_NV_optimus"
+# - TMPDIR: Qt shared-memory key path uses QDir::tempPath(); Buddy and MoonDeckStream must use the same path
+#   or MoonDeckStream cannot read ENV regex from Buddy → black screen, exit 256, Error 11 (see docs/troubleshooting.md)
+Defaults:streamdeck env_keep += "HOME USER XDG_CONFIG_HOME XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS DISPLAY PULSE_SINK SUNSHINE_LAUNCHED TMPDIR __NV_PRIME_RENDER_OFFLOAD __GLX_VENDOR_LIBRARY_NAME __VK_LAYER_NV_optimus"
 streamdeck ALL=(__BUDDY_USER__) NOPASSWD: /usr/bin/steam
 streamdeck ALL=(__BUDDY_USER__) NOPASSWD: /usr/bin/eden
 streamdeck ALL=(__BUDDY_USER__) NOPASSWD: /usr/local/bin/MoonDeckStream

@@ -19,7 +19,7 @@
     },
     {
       "name": "MoonDeckStream",
-      "cmd": "sudo -u __BUDDY_USER__ HOME=/home/__BUDDY_USER__ USER=__BUDDY_USER__ XDG_RUNTIME_DIR=/run/user/__BUDDY_UID__ DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/__BUDDY_UID__/bus DISPLAY=:99 SUNSHINE_LAUNCHED=1 __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia __VK_LAYER_NV_optimus=NVIDIA_only /usr/local/bin/MoonDeckStream",
+      "cmd": "sudo -u __BUDDY_USER__ HOME=/home/__BUDDY_USER__ USER=__BUDDY_USER__ XDG_RUNTIME_DIR=/run/user/__BUDDY_UID__ DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/__BUDDY_UID__/bus TMPDIR=/tmp DISPLAY=:99 SUNSHINE_LAUNCHED=1 __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia __VK_LAYER_NV_optimus=NVIDIA_only /usr/local/bin/MoonDeckStream",
       "output": "moondeckstream.log",
       "wait-all": false
     }

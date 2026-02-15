@@ -175,15 +175,25 @@ if id "$BUDDY_USER" &>/dev/null; then
     if [[ ! -f "$OVERRIDE_DIR/override.conf" ]]; then
         cat > "$OVERRIDE_DIR/override.conf" << 'OVEREOF'
 # Force headless mode so Buddy does not crash when display/compositor is unavailable
+# TMPDIR=/tmp so Qt shared-memory key path matches MoonDeckStream (ENV regex IPC); see docs/env-regex-shared-memory-research.md
 [Service]
 Environment=NO_GUI=1
+Environment=TMPDIR=/tmp
 OVEREOF
         chown "$BUDDY_USER:$BUDDY_USER" "$OVERRIDE_DIR/override.conf"
-        log_info "Created moondeckbuddy.service override (NO_GUI=1)"
+        log_info "Created moondeckbuddy.service override (NO_GUI=1, TMPDIR=/tmp)"
+    else
+        # Existing override: ensure TMPDIR=/tmp for ENV regex IPC (Buddy↔MoonDeckStream same key path)
+        if ! grep -q 'TMPDIR=' "$OVERRIDE_DIR/override.conf" 2>/dev/null; then
+            echo "Environment=TMPDIR=/tmp" >> "$OVERRIDE_DIR/override.conf"
+            chown "$BUDDY_USER:$BUDDY_USER" "$OVERRIDE_DIR/override.conf"
+            log_info "Added TMPDIR=/tmp to moondeckbuddy.service override"
+        fi
     fi
-    # Enable and start so first run works without reboot
+    # Reload so override (e.g. TMPDIR=/tmp) is applied; restart so running Buddy picks up new env
     sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$BUDDY_USER")" systemctl --user daemon-reload 2>/dev/null || true
-    sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$BUDDY_USER")" systemctl --user enable --now moondeckbuddy.service 2>/dev/null || log_warn "Could not enable moondeckbuddy.service (install Buddy and run --enable-autostart as $BUDDY_USER)"
+    sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$BUDDY_USER")" systemctl --user enable moondeckbuddy.service 2>/dev/null || log_warn "Could not enable moondeckbuddy.service"
+    sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$BUDDY_USER")" systemctl --user restart moondeckbuddy.service 2>/dev/null || log_warn "Could not restart moondeckbuddy.service (install Buddy and run --enable-autostart as $BUDDY_USER)"
     sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$BUDDY_USER")" systemctl --user enable --now moondeckbuddy-gui-session.service 2>/dev/null || true
 else
     log_warn "User $BUDDY_USER not found; skip Buddy autostart. Create user and run: sudo -u $BUDDY_USER MoonDeckBuddy --enable-autostart && systemctl --user enable --now moondeckbuddy.service"
