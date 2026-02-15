@@ -153,7 +153,7 @@ SUMMARY_FILE="$LOG_DIR/summary.txt"
     
     echo ""
     echo "=== Full logs location ==="
-    echo "$LOG_DIR"
+    echo "$LOG_DIR (includes moondeck*.log and moondeck-diagnostics.txt when collect-logs ran)"
     echo ""
     echo "=========================================="
     

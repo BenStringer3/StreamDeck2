@@ -11,10 +11,20 @@ source "$REPO_ROOT/scripts/lib.sh"
 # Configuration
 STREAM_DISPLAY="${STREAM_DISPLAY:-:99}"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
-LOG_DIR="/tmp/streamdeck-test-$TIMESTAMP"
+# Store in repo so Cursor agents can grep logs for troubleshooting
+LOG_DIR="$REPO_ROOT/logs/streamdeck-$TIMESTAMP"
 
 log_info "Collecting diagnostic logs to: $LOG_DIR"
-mkdir -p "$LOG_DIR"
+if ! mkdir -p "$LOG_DIR" 2>/dev/null; then
+    if [[ -d "$REPO_ROOT/logs" ]] && [[ ! -w "$REPO_ROOT/logs" ]]; then
+        log_error "Cannot create $LOG_DIR: $REPO_ROOT/logs is not writable (likely root-owned from a previous sudo run)."
+        log_error "Fix: run once with sudo so we can fix ownership: sudo ./collect-logs.sh"
+        log_error "Or: sudo chown -R \$(whoami) $REPO_ROOT/logs"
+    else
+        log_fatal "Cannot create directory: $LOG_DIR"
+    fi
+    exit 1
+fi
 
 # Systemctl status
 log_info "Collecting systemctl status..."
@@ -154,6 +164,12 @@ ps aux | grep -E "(Xorg|sunshine)" | grep -v grep > "$LOG_DIR/processes.txt" 2>&
 # Input devices (for concurrency check)
 log_info "Collecting input device information..."
 ls -la /dev/input/by-id/ > "$LOG_DIR/input-devices.txt" 2>&1 || true
+
+# When run with sudo, make logs/ and this run owned by invoking user so next run without sudo can create new dirs
+if [[ $EUID -eq 0 ]] && [[ -n "${SUDO_UID:-}" ]]; then
+    chown -R "${SUDO_UID}:${SUDO_GID}" "$LOG_DIR"
+    chown "${SUDO_UID}:${SUDO_GID}" "$REPO_ROOT/logs" 2>/dev/null || true
+fi
 
 log_info "Log collection complete: $LOG_DIR"
 echo "$LOG_DIR"

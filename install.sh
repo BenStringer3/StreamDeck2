@@ -337,6 +337,10 @@ fi
 # Summary
 if [[ $HEALTH_FAILED -eq 0 ]]; then
     log_info ""
+    log_info "Collecting post-install diagnostic logs..."
+    INSTALL_LOG_DIR="$("$REPO_ROOT/collect-logs.sh")"
+    log_info "Logs collected to: $INSTALL_LOG_DIR"
+    log_info ""
     log_info "=========================================="
     log_info "Setup completed successfully!"
     log_info "=========================================="
@@ -355,6 +359,8 @@ else
     log_error "Setup completed with errors!"
     log_error "=========================================="
     log_error ""
-    log_error "Some health checks failed. Run ./collect-logs.sh for diagnostics."
+    log_error "Collecting diagnostic logs..."
+    INSTALL_LOG_DIR="$("$REPO_ROOT/collect-logs.sh")"
+    log_error "Logs collected to: $INSTALL_LOG_DIR"
     exit 1
 fi

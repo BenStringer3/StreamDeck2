@@ -1,0 +1,2 @@
+# Collected diagnostic logs (run ./collect-logs.sh); keep out of git, available to agents in workspace
+logs/
