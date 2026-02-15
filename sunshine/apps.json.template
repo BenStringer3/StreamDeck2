@@ -14,7 +14,7 @@
     },
     {
       "name": "Steam Big Picture",
-      "cmd": "sudo -u __BUDDY_USER__ HOME=/home/__BUDDY_USER__ USER=__BUDDY_USER__ XDG_RUNTIME_DIR=/run/user/__BUDDY_UID__ DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/__BUDDY_UID__/bus PULSE_SINK=StreamDeck-Bridge steam -gamepadui --disable-gpu --disable-software-rasterizer",
+      "cmd": "sudo -u __BUDDY_USER__ HOME=/home/__BUDDY_USER__ USER=__BUDDY_USER__ XDG_RUNTIME_DIR=/run/user/__BUDDY_UID__ DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/__BUDDY_UID__/bus PULSE_SINK=StreamDeck-Bridge DISPLAY=:99 steam -gamepadui --disable-gpu --disable-software-rasterizer",
       "output": "steam-bp.log"
     },
     {
