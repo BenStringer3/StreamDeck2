@@ -63,11 +63,13 @@ log_info "Installing dependencies..."
 # Only install nvidia-utils (provides nvidia-smi) - skip kernel driver package since it's already installed
 # xf86-video-dummy: dummy driver for headless Xorg; pipewire/pipewire-pulse for streamdeck audio capture
 # openbox: lightweight window manager on :99 (needed so apps can request fullscreen via EWMH)
+# xterm: Sunshine Desktop app runs this on :99 when user launches Desktop from Moonlight
 pacman -Sy --noconfirm --needed \
     xorg-server \
     xorg-xrandr \
     xf86-video-dummy \
     openbox \
+    xterm \
     nvidia-utils \
     wl-clipboard || log_fatal "Failed to install dependencies"
 
