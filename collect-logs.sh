@@ -197,7 +197,12 @@ ps aux | grep -E "(Xorg|sunshine)" | grep -v grep > "$LOG_DIR/processes.txt" 2>&
 log_info "Collecting logind inhibitors and session state..."
 {
     echo "=== loginctl list-inhibitors (any entry can prevent screen blank/sleep) ==="
-    loginctl list-inhibitors 2>&1 || true
+    if loginctl list-inhibitors 2>/dev/null; then
+        :
+    else
+        echo "(loginctl list-inhibitors not available, trying D-Bus ListInhibitors)"
+        busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager ListInhibitors 2>&1 || true
+    fi
     echo ""
     echo "=== Session(s) with seat (IdleHint / IdleSinceHint) ==="
     for sid in $(loginctl list-sessions --no-legend 2>/dev/null | awk '{print $1}'); do

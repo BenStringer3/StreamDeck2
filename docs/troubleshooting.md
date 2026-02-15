@@ -69,21 +69,74 @@ firewall-cmd --permanent --add-port=48010/tcp --add-port=59999/tcp
 firewall-cmd --reload
 ```
 
+## Monitors never sleep (stay on 24/7)
+
+After installing this setup, physical monitors may never blank or sleep on their own. Screen blanking / DPMS is usually tied to **session idle** (no input activity) or to **inhibit** locks (e.g. logind or compositor).
+
+**Likely cause:** The only parts of this setup that run in your **desktop session** are **MoonDeck Buddy** (`moondeckbuddy.service`) and **moondeckbuddy-gui-session.service**. One of them may be:
+
+- Holding a **logind inhibit** lock (e.g. "idle" or "handle-suspend") so the session is never considered idle for screen blank.
+- Or (GUI session) presenting a window/tray that the compositor treats as activity.
+
+The streaming services (Xorg :99, Sunshine) run as system units under user `streamdeck`; they do not have a logind graphical session and do not drive your physical monitors, so they are unlikely to affect your display sleep directly.
+
+**Verify:**
+
+1. **List active inhibitors** (anything here can prevent sleep/blank). On older systemd, `loginctl list-inhibitors` may be unknown; use the busctl fallback:
+   ```bash
+   loginctl list-inhibitors 2>/dev/null || busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager ListInhibitors
+   ```
+   If you see an inhibitor whose "What" includes `idle` or `handle-suspend`, and "Who" is MoonDeck Buddy (or a PID that is Buddy), that is the cause.
+
+2. **Session idle state** (optional):
+   ```bash
+   loginctl show-session "$(loginctl | awk '/seat0/ && /tty/ { print $1 }' | head -1)" -p IdleHint -p IdleSinceHint
+   ```
+   If IdleHint is always `no` even when you do nothing, something is keeping the session active.
+
+3. **Quick test:** Stop the Buddy user services and see if monitors start sleeping after your normal idle timeout:
+   ```bash
+   systemctl --user stop moondeckbuddy.service moondeckbuddy-gui-session.service
+   ```
+   Wait for your usual blank timeout (e.g. 5–10 minutes). If screens blank, the cause is in Buddy or the GUI session service.
+
+**Mitigations:**
+
+- **Disable the GUI session service** if you don't need the Buddy tray/GUI:  
+  `systemctl --user disable --now moondeckbuddy-gui-session.service`  
+  Buddy (headless) still runs; only the GUI part is disabled. Re-enable with `enable --now` if you need it later.
+
+- If **Buddy itself** holds an inhibit lock incorrectly, this is an upstream MoonDeck Buddy issue. You can report it (e.g. [moondeck-buddy](https://github.com/FrogTheFrog/moondeck-buddy)) and/or work around by stopping Buddy when not streaming:  
+  `systemctl --user stop moondeckbuddy.service` (and re-enable/start when you want to stream).
+
+- Ensure your compositor/display manager idle and DPMS timeouts are set as you expect (e.g. Hyprland, swayidle, or xset/xss).
+
+**Evidence in log bundle:** `collect-logs.sh` captures inhibitors (via `loginctl list-inhibitors` or, if unavailable, D-Bus `ListInhibitors`) and session idle info in `loginctl-inhibitors.txt`.
+
+**Alternative cause — EDID on DP-3 (same GPU as real monitors):** If you have an EDID override or `ConnectedMonitor`/`CustomEDID` for **DP-3** (or any output) on the **same GPU** that drives your physical monitors, that can keep monitors awake. The GPU sees a permanently "connected" display on that output; it often never goes to DPMS standby, and power/blank state can be shared across outputs on the GPU, so the whole GPU stays active and real outputs never sleep.
+
+- **Check:** Look for DP-3 / EDID / ConnectedMonitor in configs that apply to your **desktop** session (the one driving your monitors), not the streamdeck Xorg :99 (which uses the dummy driver only).  
+  ```bash
+  grep -rE 'DP-3|EDID|ConnectedMonitor|CustomEDID' /etc/X11/ /etc/modprobe.d/ 2>/dev/null
+  cat /proc/cmdline | tr ' ' '\n' | grep -i edid
+  ```
+  No matches there means no EDID/DP-3 in those paths; the GPU could still have a connector override from kernel/DRM (e.g. `drm_kms_helper.edid_firmware`) or from a config in another location.
+- **If you use that EDID for headless/streaming:** Consider moving the fake display to a different GPU (if you have one), or use the repo’s **dummy** Xorg config for :99 only and avoid configuring a real output (DP-3) for the desktop. Removing or scoping the EDID so it is not applied to the session that owns your physical monitors may restore normal screen blanking.
+
 ## Steam Deck touchpad and PC mouse linked
 
 When you stream Big Picture (or Desktop) and use the Steam Deck touchpad, the **PC cursor and the stream cursor move together** (input “leaks” to the desktop).
 
 **Cause:** Sunshine creates virtual passthrough input devices (mouse, keyboard, gamepad). If udev leaves them as **GROUP=input** (and/or **TAGS=:seat:uaccess**), the desktop user can open them, so the compositor receives the same events as the stream → linked cursors.
 
-**Evidence (in a log bundle):** `input-pipeline-detail.txt` shows the Sunshine device (e.g. event23) with `GROUP=input` and/or `TAGS=:seat:uaccess`; `input-pipeline-summary.txt` shows “udev GROUP is 'input', expected streamdeck”.
-
+**Evidence (in a log bundle):** In `input-pipeline-detail.txt`, section **"OPEN HANDLES (all Sunshine devices)"**: each Sunshine device should show **`crw-rw---- 1 root streamdeck`**. If it shows **`root input`**, the udev rule did not apply. The summary fails with "Desktop has Sunshine input devices open" and lsof shows **Hyprland** (or your compositor) with an open fd on those devices.
 **Fix:**
 
-1. The install ships a udev rule that sets **GROUP="streamdeck"** and **TAG-="uaccess"** for Sunshine passthrough devices so only the streamdeck user (and Xorg :99) can open them. Re-run **`sudo ./install.sh`** to install the latest rule (e.g. `99-streamdeck-sunshine-input-isolation.rules`), then **reboot** so device nodes are recreated and the desktop closes open handles (reboot is required; udev reload is not enough).
-2. Remove stale udev rule if present: **`sudo rm -f /etc/udev/rules.d/61-streamdeck-sunshine-input-isolation.rules`**, then reload rules and reboot.
+1. The install ships a udev rule that sets **GROUP="streamdeck"** and **TAG-="uaccess"** for Sunshine passthrough devices. Re-run **`sudo ./install.sh`** to install the latest rule; install now also removes the obsolete **`61-streamdeck-sunshine-input-isolation.rules`** if present. Then **reboot** so device nodes are recreated and the desktop closes open handles (reboot is required; udev reload is not enough).
+2. If you had an older install, remove the stale rule manually: **`sudo rm -f /etc/udev/rules.d/61-streamdeck-sunshine-input-isolation.rules`**, then reload and reboot.
 3. Ensure **Steam Big Picture** runs on the stream display: the Sunshine app should pass **DISPLAY=:99** in the app command so Steam (and thus input) runs in the streamdeck session. The install template does this; if you edited apps.json, add `DISPLAY=:99` to the Steam Big Picture app cmd.
 
-After a successful fix, the summary should show "Desktop does not have Sunshine input devices open". If leakage persists after reboot: run “Xorg :99 has Sunshine device open” If leakage persists after reboot: run `sudo udevadm test $(udevadm info -q path -n /dev/input/event17)` and check the 99-streamdeck rule sets GROUP=streamdeck; `ls -l /dev/input/event17` should show group streamdeck.
+**Verification:** After a successful fix, the summary should show "Desktop does not have Sunshine input devices open" and `ls -l /dev/input/event17` should show **group streamdeck**. If leakage persists after reboot, run (with stream active) `sudo udevadm test $(udevadm info -q path -n /dev/input/event17)` and confirm the 99-streamdeck rule sets GROUP=streamdeck. The log bundle now includes **`udevadm-sunshine-devices.txt`** when Sunshine devices exist.
 
 ## Cursor doesn't move in game when using Steam Deck trackpad
 
