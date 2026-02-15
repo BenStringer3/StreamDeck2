@@ -23,6 +23,34 @@ Common issues:
 - **Firewall:** If Moonlight shows "Starting control stream establishment" then fails, or Sunshine logs "Initial Ping Timeout", open the Sunshine and Buddy ports (see **Firewall** below).
 - Buddy (MoonDeck): default port **59999** (TCP).
 
+## No audio in stream
+
+You get picture but **no audio** on the Moonlight client.
+
+**Typical evidence (in `sunshine-logs/sunshine.log`):**
+
+- `Setting default sink to: [sink-sunshine-stereo]`
+- `Error: Couldn't set default-sink [sink-sunshine-stereo]: Not supported`
+- `Error: Unable to initialize audio capture. The stream will not have audio.`
+
+**Root cause:** When a stream starts, Sunshine creates/uses its own Pulse sink (`sink-sunshine-stereo`) and tries to set it as the **default** sink. That operation requires **metadata (M) permission**. Pulse clients connecting via pipewire-pulse get restricted permission by default, so set-default-sink returns "Not supported" and Sunshine disables audio capture.
+
+**Fix (install.sh):** The streamdeck PipeWire service uses a dedicated config dir (`XDG_CONFIG_HOME=/etc/pipewire-streamdeck`) with a drop-in that sets `module.access.args` with **access.legacy = true**, so every client (including Pulse clients) gets unrestricted access. No session manager (WirePlumber) is needed. Re-run `sudo ./install.sh` to deploy `/etc/pipewire-streamdeck/pipewire/pipewire.conf.d/50-streamdeck-access.conf`; then restart: `sudo systemctl restart streamdeck-pipewire.service streamdeck-audio-capture.service streamdeck-sunshine.service`.
+
+**If you see "pa_simple_new() failed: Invalid argument" or "Found default monitor by name: " (empty):** set-default-sink may have succeeded but Sunshine's capture open failed. Ensure `StreamDeck-Capture` sink exists (audio-capture service creates it) and that Sunshine's `audio_sink = StreamDeck-Capture` is set in `/home/streamdeck/.config/sunshine/sunshine.conf`.
+
+**What to do if audio is still silent:**
+
+1. **Confirm:** In the log bundle, `sunshine-logs/sunshine.log` — look for "Setting default sink", "Not supported", "pa_simple_new() failed", or "Unable to initialize audio capture".
+2. **Reproduce set-default-sink:** With services running, run:
+   ```bash
+   sudo -u streamdeck XDG_RUNTIME_DIR=/run/streamdeck-audio PULSE_SERVER=unix:/run/streamdeck-audio/pulse/native pactl set-default-sink sink-sunshine-stereo
+   ```
+   If you see "Not supported", the access config is not applied. Check that `/etc/pipewire-streamdeck/pipewire/pipewire.conf.d/50-streamdeck-access.conf` exists and contains `access.legacy = true` (see `pipewire-streamdeck-config.txt` in the log bundle). install.sh also creates `pipewire.conf` as a symlink in that dir so the drop-in is loaded.
+3. **Audio pipeline health:** Confirm `streamdeck-audio-bridge.service`, `streamdeck-pipewire.service`, and `streamdeck-audio-capture.service` are active. See `journalctl-audio-bridge.log`, `journalctl-pipewire.log`, and `journalctl-audio-capture.log` in the log bundle.
+4. **Game audio not routed to bridge:** For the stream to carry game/Steam audio, the launched app must use the bridge sink. The Sunshine apps template sets `PULSE_SINK=StreamDeck-Bridge` for MoonDeckStream and Steam Big Picture. If you added apps manually, include `PULSE_SINK=StreamDeck-Bridge` in the command env. Re-run `install.sh` to refresh deployed `apps.json` from the template.
+5. **StreamDeck-Capture missing / capture service race:** If `journalctl-audio-capture.log` shows "Pulse socket not found" then success after a restart, the capture service was starting before the streamdeck PipeWire socket existed. The unit now has an `ExecStartPre` that waits up to 10s for `/run/streamdeck-audio/pulse/native`. Re-run `install.sh` to deploy the updated unit, then restart `streamdeck-audio-capture.service`. Check `pipewire-streamdeck-state.txt` in the log bundle: streamdeck's Pulse should list a sink named `StreamDeck-Capture` (created by the capture bridge).
+
 ## Firewall (Initial Ping Timeout / control stream establishment)
 
 **First check:** If the test summary **Post-connection port state** shows `UDP 47999: (none)` (and other Sunshine UDP as (none)), Sunshine never bound those ports because the **app (MoonDeckStream) exited** — fix the app exit (see "Desktop streams but MoonDeckStream fails" above); opening firewall will not help.

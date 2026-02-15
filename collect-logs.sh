@@ -91,6 +91,26 @@ log_info "Collecting streamdeck PipeWire state..."
     sudo -u streamdeck XDG_RUNTIME_DIR=/run/streamdeck-audio pactl list sources short 2>&1 || echo "Could not list sources"
 } > "$LOG_DIR/pipewire-streamdeck-state.txt" 2>&1
 
+# Streamdeck PipeWire config (access drop-in for set-default-sink; helps debug no-audio)
+log_info "Collecting streamdeck PipeWire config..."
+{
+    echo "=== /etc/pipewire-streamdeck (listing) ==="
+    (ls -la /etc/pipewire-streamdeck 2>/dev/null || sudo ls -la /etc/pipewire-streamdeck 2>/dev/null) || echo "Directory not found"
+    echo ""
+    echo "=== pipewire/ (listing; pipewire.conf should exist as symlink so drop-in is loaded) ==="
+    (ls -la /etc/pipewire-streamdeck/pipewire 2>/dev/null || sudo ls -la /etc/pipewire-streamdeck/pipewire 2>/dev/null) || echo "Directory not found"
+    echo ""
+    echo "=== pipewire/pipewire.conf.d (listing + contents) ==="
+    (ls -la /etc/pipewire-streamdeck/pipewire/pipewire.conf.d 2>/dev/null || sudo ls -la /etc/pipewire-streamdeck/pipewire/pipewire.conf.d 2>/dev/null) || echo "Directory not found"
+    echo ""
+    for f in /etc/pipewire-streamdeck/pipewire/pipewire.conf.d/*.conf; do
+        [[ -e "$f" ]] || continue
+        echo "=== $f ==="
+        (cat "$f" 2>/dev/null || sudo cat "$f" 2>/dev/null)
+        echo ""
+    done
+} > "$LOG_DIR/pipewire-streamdeck-config.txt" 2>&1
+
 # Sunshine audio config (sudo: streamdeck's config is not world-readable)
 log_info "Collecting Sunshine audio config..."
 if sudo test -f /home/streamdeck/.config/sunshine/sunshine.conf; then

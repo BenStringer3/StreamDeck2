@@ -13,6 +13,8 @@ User=streamdeck
 Group=streamdeck
 # Supplementary groups for ALSA device access (audio group owns /dev/snd/*)
 SupplementaryGroups=audio
+# Wait for streamdeck PipeWire-Pulse socket so capture script does not fail with "Pulse socket not found"
+ExecStartPre=/bin/sh -c 'for i in 1 2 3 4 5 6 7 8 9 10; do test -S /run/streamdeck-audio/pulse/native && exit 0; sleep 1; done; exit 1'
 # Point pacat to streamdeck's PipeWire-Pulse instance
 # HOME is required by some PulseAudio clients (pacat) to locate config files
 Environment="HOME=/home/streamdeck"

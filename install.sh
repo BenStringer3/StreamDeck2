@@ -272,6 +272,15 @@ fi
 cp "$REPO_ROOT/systemd/streamdeck-audio-bridge.service" /etc/systemd/system/
 cp "$REPO_ROOT/systemd/streamdeck-pipewire.service" /etc/systemd/system/
 cp "$REPO_ROOT/systemd/streamdeck-audio-capture.service" /etc/systemd/system/
+# PipeWire config for streamdeck instance (unrestricted access so set-default-sink works)
+mkdir -p /etc/pipewire-streamdeck/pipewire/pipewire.conf.d
+if [[ -f "$REPO_ROOT/etc/pipewire-streamdeck/pipewire/pipewire.conf.d/50-streamdeck-access.conf" ]]; then
+    install -m 0644 "$REPO_ROOT/etc/pipewire-streamdeck/pipewire/pipewire.conf.d/50-streamdeck-access.conf" /etc/pipewire-streamdeck/pipewire/pipewire.conf.d/
+fi
+# So XDG_CONFIG_HOME/pipewire/pipewire.conf is found first, load system main config from our dir (ensures our .d is used)
+if [[ ! -f /etc/pipewire-streamdeck/pipewire/pipewire.conf ]]; then
+    ln -s /usr/share/pipewire/pipewire.conf /etc/pipewire-streamdeck/pipewire/pipewire.conf
+fi
 
 # Create directories
 log_info "Creating directories..."

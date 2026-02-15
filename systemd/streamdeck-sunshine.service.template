@@ -13,6 +13,7 @@ Group=__STREAM_GROUP__
 # Bind Sunshine to the streaming X display
 Environment="DISPLAY=__STREAM_DISPLAY__"
 # Audio capture: use streamdeck's PipeWire-Pulse (capture bridge feeds StreamDeck-Capture sink)
+Environment="XDG_RUNTIME_DIR=/run/streamdeck-audio"
 Environment="PULSE_SERVER=unix:/run/streamdeck-audio/pulse/native"
 Environment="PULSE_RUNTIME_PATH=/run/streamdeck-audio"
 # Sunshine config directory

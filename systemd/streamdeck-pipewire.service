@@ -16,9 +16,11 @@ ExecStartPre=+/bin/mkdir -p /run/streamdeck-audio
 ExecStartPre=+/bin/chown streamdeck:streamdeck /run/streamdeck-audio
 ExecStartPre=+/bin/chmod 0700 /run/streamdeck-audio
 Environment="XDG_RUNTIME_DIR=/run/streamdeck-audio"
+# Grant unrestricted access so Pulse clients (Sunshine) can set-default-sink without a session manager.
+# Config dir must contain pipewire/pipewire.conf.d/50-streamdeck-access.conf (see install.sh).
+Environment="XDG_CONFIG_HOME=/etc/pipewire-streamdeck"
 # pipewire-pulse requires pipewire core; start core first, then pulse compat layer
-# Trap ensures we kill pipewire when pipewire-pulse exits (e.g. on service stop)
-ExecStart=/bin/sh -c 'pipewire & WPID=$!; sleep 2; trap "kill $WPID 2>/dev/null" EXIT; pipewire-pulse'
+ExecStart=/bin/sh -c 'pipewire & WPID=$!; sleep 2; trap "kill $WPID 2>/dev/null" EXIT; exec pipewire-pulse'
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
