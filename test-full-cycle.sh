@@ -106,13 +106,17 @@ log_info "  3. Launch MoonDeckStream (or Desktop for a quick test)"
 log_info "  4. Wait for the stream to start"
 log_info "  5. Test that your local desktop still works (concurrency check)"
 log_info ""
-read -p "Press Enter after you've completed the above steps (or Ctrl+C to cancel)..."
+read -p "Press Enter after you've done the above (or Ctrl+C to cancel)..."
 log_info ""
 
-# Step 4: Collect logs
+# Step 4: Collect logs and run input-pipeline check
 log_info "Step 4: Collecting diagnostic logs..."
 LOG_DIR="$("$SCRIPT_DIR/collect-logs.sh")"
 log_info "Logs collected to: $LOG_DIR"
+log_info "Running input-pipeline healthcheck..."
+if ! "$SCRIPT_DIR/scripts/check-input-pipeline.sh" "$LOG_DIR" >/dev/null 2>&1; then
+    log_warn "Input-pipeline check reported failures (see input-pipeline-summary.txt in LOG_DIR)"
+fi
 log_info ""
 
 # Step 5: Generate summary
@@ -183,6 +187,13 @@ SUMMARY_FILE="$LOG_DIR/summary.txt"
     if echo "$SUNSHINE_ERR" | grep -q "Initial Ping Timeout"; then
         echo ""
         echo "⚠ Initial Ping Timeout: see Post-connection port state below. If UDP 47999 is (none), Sunshine is not binding the control channel — not a firewall issue."
+    fi
+    
+    echo "=== Input pipeline ==="
+    if [[ -f "$LOG_DIR/input-pipeline-summary.txt" ]]; then
+        cat "$LOG_DIR/input-pipeline-summary.txt"
+    else
+        echo "Run scripts/check-input-pipeline.sh \"$LOG_DIR\" to generate input-pipeline-summary.txt"
     fi
     
     echo ""

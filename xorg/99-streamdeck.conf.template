@@ -2,10 +2,16 @@
 # Uses dummy driver for display, NVIDIA for rendering via PRIME offload
 # This avoids DRM master conflicts with the main desktop session
 # Resolution: 1280x800 (Steam Deck native)
+#
+# Input isolation: only Sunshine virtual passthrough devices are used on this display.
+# Without this, Xorg would open all input devices (physical keyboard/mouse) and PC input
+# would leak into the stream session (e.g. Eden). See udev/61-streamdeck-sunshine-input-isolation.rules
+# for the other direction (preventing Moonlight input from reaching the desktop).
 
 Section "ServerLayout"
     Identifier     "StreamDeckLayout"
     Screen         0 "StreamDeckScreen" 0 0
+    # Rely on InputClass below to restrict to Sunshine passthrough only; do not add extra devices
 EndSection
 
 Section "Monitor"
@@ -32,4 +38,82 @@ Section "Screen"
         Depth       24
         Modes       "1280x800"
     EndSubSection
+EndSection
+
+# --- Input isolation: only Sunshine passthrough + virtual gamepad on :99 ---
+# Xorg does not treat MatchProduct "*" as a glob, so we explicitly ignore physical devices by name.
+# Then we allow only Sunshine virtual devices (passthrough + virtual gamepad). Order: allow-rules last.
+
+# Ignore physical / system devices (substring match; add more if you add hardware)
+Section "InputClass"
+    Identifier     "StreamDeck ignore power and system"
+    MatchProduct   "Power Button"
+    Option         "Ignore" "true"
+EndSection
+Section "InputClass"
+    Identifier     "StreamDeck ignore video bus"
+    MatchProduct   "Video Bus"
+    Option         "Ignore" "true"
+EndSection
+Section "InputClass"
+    Identifier     "StreamDeck ignore Eee PC WMI"
+    MatchProduct   "Eee PC WMI"
+    Option         "Ignore" "true"
+EndSection
+Section "InputClass"
+    Identifier     "StreamDeck ignore PC Speaker"
+    MatchProduct   "PC Speaker"
+    Option         "Ignore" "true"
+EndSection
+Section "InputClass"
+    Identifier     "StreamDeck ignore OBINS"
+    MatchProduct   "OBINS"
+    Option         "Ignore" "true"
+EndSection
+Section "InputClass"
+    Identifier     "StreamDeck ignore Logitech"
+    MatchProduct   "Logitech"
+    Option         "Ignore" "true"
+EndSection
+Section "InputClass"
+    Identifier     "StreamDeck ignore HD-Audio"
+    MatchProduct   "HD-Audio"
+    Option         "Ignore" "true"
+EndSection
+Section "InputClass"
+    Identifier     "StreamDeck ignore HDA NVidia"
+    MatchProduct   "HDA NVidia"
+    Option         "Ignore" "true"
+EndSection
+
+# Allow Sunshine virtual devices only (passthrough + virtual gamepad for Eden)
+Section "InputClass"
+    Identifier     "StreamDeck Sunshine mouse relative"
+    MatchProduct   "Mouse passthrough"
+    Option         "Ignore" "false"
+EndSection
+Section "InputClass"
+    Identifier     "StreamDeck Sunshine mouse absolute"
+    MatchProduct   "Mouse passthrough (absolute)"
+    Option         "Ignore" "false"
+EndSection
+Section "InputClass"
+    Identifier     "StreamDeck Sunshine keyboard"
+    MatchProduct   "Keyboard passthrough"
+    Option         "Ignore" "false"
+EndSection
+Section "InputClass"
+    Identifier     "StreamDeck Sunshine touch"
+    MatchProduct   "Touch passthrough"
+    Option         "Ignore" "false"
+EndSection
+Section "InputClass"
+    Identifier     "StreamDeck Sunshine pen"
+    MatchProduct   "Pen passthrough"
+    Option         "Ignore" "false"
+EndSection
+Section "InputClass"
+    Identifier     "StreamDeck Sunshine gamepad"
+    MatchProduct   "Sunshine X-Box One"
+    Option         "Ignore" "false"
 EndSection
