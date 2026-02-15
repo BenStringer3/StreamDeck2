@@ -12,6 +12,20 @@ source "$REPO_ROOT/scripts/lib.sh"
 STREAM_USER="${STREAM_USER:-streamdeck}"
 STREAM_DISPLAY="${STREAM_DISPLAY:-:99}"
 
+# Install MoonDeckStream wrapper from scripts/moondeckstream-wrapper.sh (substitutes __REAL_BIN__ and __PRE_ARGS__)
+install_moondeckstream_wrapper() {
+    local real_bin="$1"
+    local pre_args="$2"
+    local wrapper_src="$REPO_ROOT/scripts/moondeckstream-wrapper.sh"
+    local wrapper_dest="/usr/local/bin/MoonDeckStream"
+    [[ -f "$wrapper_src" ]] || log_fatal "Wrapper script not found: $wrapper_src"
+    local tmp="${wrapper_dest}.new.$$"
+    sed -e "s|__REAL_BIN__|$real_bin|g" -e "s|__PRE_ARGS__|$pre_args|g" "$wrapper_src" > "$tmp"
+    chmod +x "$tmp"
+    mv "$tmp" "$wrapper_dest"
+    log_info "Installed MoonDeckStream wrapper (real_bin=$real_bin)"
+}
+
 log_info "Starting Stream Deck setup (Option B: separate Xorg session)"
 
 # Check if running as root
@@ -28,9 +42,11 @@ else
     log_warn "EDID file not found at $EDID_PATH (will use AllowEmptyInitialConfiguration)"
 fi
 
-# Check for existing Sunshine installation
-if systemctl list-units --type=service --all | grep -q "sunshine.service"; then
-    log_warn "Existing sunshine.service found - may conflict with streamdeck-sunshine"
+# Disable system sunshine.service so streamdeck-sunshine is the only instance (avoids port/binding conflicts)
+if systemctl list-unit-files --type=service 2>/dev/null | grep -q '^sunshine.service'; then
+    log_info "Disabling and stopping system sunshine.service (we use streamdeck-sunshine only)"
+    systemctl disable sunshine.service 2>/dev/null || true
+    systemctl stop sunshine.service 2>/dev/null || true
 fi
 
 # Detect NVIDIA driver
@@ -107,57 +123,26 @@ if [[ $BUDDY_INSTALLED -eq 0 ]] || ! command -v MoonDeckStream &>/dev/null; then
         WRAPPER="/usr/local/bin/$bin"
         if [[ ! -x "$WRAPPER" ]] || ! grep -q "MoonDeckBuddy.AppImage" "$WRAPPER" 2>/dev/null; then
             if [[ "$bin" == "MoonDeckStream" ]]; then
-                # MoonDeckStream must see SUNSHINE_LAUNCHED=1 or it exits 256; set it in wrapper so we don't rely on sudo env_keep
-                WRAPPER_TMP="${WRAPPER}.new.$$"
-                cat > "$WRAPPER_TMP" << 'EOF'
-#!/bin/bash
-export SUNSHINE_LAUNCHED=1
-# MoonDeckStream is a singleton; kill any stale instance so this launch can acquire the lock
-pkill -u "$(whoami)" -x MoonDeckStream 2>/dev/null || true
-sleep 0.5
-exec "MOONDECK_APPIMAGE_PLACEHOLDER" --exec MoonDeckStream "$@"
-EOF
-                sed -i "s|MOONDECK_APPIMAGE_PLACEHOLDER|$MOONDECK_APPIMAGE|g" "$WRAPPER_TMP"
-                chmod +x "$WRAPPER_TMP"
-                mv "$WRAPPER_TMP" "$WRAPPER"
+                install_moondeckstream_wrapper "$MOONDECK_APPIMAGE" "--exec MoonDeckStream"
             else
                 cat > "$WRAPPER" << EOF
 #!/bin/bash
 exec "$MOONDECK_APPIMAGE" --exec $bin "\$@"
 EOF
+                chmod +x "$WRAPPER"
+                log_info "Created $WRAPPER"
             fi
-            chmod +x "$WRAPPER"
-            log_info "Created $WRAPPER"
         fi
     done
 fi
 # Ensure /usr/local/bin wrappers exist when AUR installed (so apps.json and systemd use stable path)
-# MoonDeckStream: always a script that exports SUNSHINE_LAUNCHED=1 then execs real binary (avoids sudo env_keep issues)
-# MoonDeckBuddy: symlink to AUR binary
+# MoonDeckStream: wrapper from scripts/moondeckstream-wrapper.sh; MoonDeckBuddy: symlink to AUR binary
 for bin in MoonDeckBuddy MoonDeckStream; do
     WRAPPER="/usr/local/bin/$bin"
     if [[ "$bin" == "MoonDeckStream" ]]; then
         AUR_BIN=$(PATH=/usr/bin:/bin command -v MoonDeckStream 2>/dev/null || true)
         if [[ -n "$AUR_BIN" ]]; then
-            # Update if missing or missing SUNSHINE_LAUNCHED or missing pkill (stale-instance fix)
-            if [[ ! -f "$WRAPPER" ]] || ! grep -q "SUNSHINE_LAUNCHED" "$WRAPPER" 2>/dev/null || ! grep -q "pkill" "$WRAPPER" 2>/dev/null; then
-                WRAPPER_TMP="${WRAPPER}.new.$$"
-                cat > "$WRAPPER_TMP" << 'WRAPEOF'
-#!/bin/bash
-export SUNSHINE_LAUNCHED=1
-# Capture stderr to help debug (collect-logs.sh can include this file)
-exec 2>>/tmp/moondeckstream-stderr.log
-# MoonDeckStream is a singleton; kill any stale instance so this launch can acquire the lock (avoids exit 256 "Another instance already running")
-pkill -u "$(whoami)" -x MoonDeckStream 2>/dev/null || true
-# Brief delay so killed process releases QSharedMemory/semaphore before we start
-sleep 0.5
-exec "AUR_BIN_PLACEHOLDER" "$@"
-WRAPEOF
-                sed -i "s|AUR_BIN_PLACEHOLDER|$AUR_BIN|g" "$WRAPPER_TMP"
-                chmod +x "$WRAPPER_TMP"
-                mv "$WRAPPER_TMP" "$WRAPPER"
-                log_info "Created $WRAPPER (wraps $AUR_BIN)"
-            fi
+            install_moondeckstream_wrapper "$AUR_BIN" ""
         fi
     else
         if [[ ! -x "$WRAPPER" ]]; then
@@ -287,8 +272,9 @@ else
 fi
 
 # Install Sunshine apps.json (MoonDeck-first: MoonDeckStream + Desktop/Steam BP for debug).
-# Template placeholders: :99 -> STREAM_DISPLAY; __BUDDY_USER__ / __BUDDY_UID__ -> Buddy user and UID
-# (MoonDeckStream must run as Buddy user to share Qt shared memory/semaphore with MoonDeck Buddy)
+# Template placeholders: :99 -> STREAM_DISPLAY; __BUDDY_USER__ / __BUDDY_UID__ -> Buddy user and UID.
+# MoonDeckStream must run as Buddy user (same user as Buddy) and with SUNSHINE_LAUNCHED=1, DISPLAY, etc.
+# MoonDeckStream app cmd is /usr/local/bin/MoonDeckStream (wrapper that kills stale PIDs and exec's real binary).
 log_info "Installing Sunshine apps.json..."
 APPS_JSON="/home/$STREAM_USER/.config/sunshine/apps.json"
 BUDDY_UID=""
