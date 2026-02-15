@@ -99,17 +99,29 @@ check_audio_bridge() {
 }
 
 check_sunshine_logs() {
-    # Check journalctl for successful Sunshine startup with encoder detection
-    # Note: Use grep -E ... >/dev/null instead of grep -qE to avoid SIGPIPE issues in pipelines
-    if journalctl -u streamdeck-sunshine.service --no-pager -n 100 2>/dev/null | grep -E "Found H.264 encoder|Found HEVC encoder" >/dev/null; then
-        # Check for port conflicts which would prevent operation
+    # Optional: when generating summary, LOG_DIR points at collected bundle; check that first.
+    local log_file=""
+    if [[ -n "${1:-}" && -f "${1}/sunshine-logs/sunshine.log" ]]; then
+        log_file="${1}/sunshine-logs/sunshine.log"
+    fi
+    if [[ -n "$log_file" ]]; then
+        if grep -E "Found H.264 encoder|Found HEVC encoder|Sunshine version" "$log_file" >/dev/null 2>&1; then
+            if grep -E "Address already in use" "$log_file" >/dev/null 2>&1; then
+                log_error "Sunshine has port conflict - another instance may be running"
+                return 1
+            fi
+            return 0
+        fi
+    fi
+    # Live check: journalctl for successful Sunshine startup with encoder detection
+    if journalctl -u streamdeck-sunshine.service --no-pager -n 200 2>/dev/null | grep -E "Found H.264 encoder|Found HEVC encoder" >/dev/null; then
         if journalctl -u streamdeck-sunshine.service --no-pager -n 50 2>/dev/null | grep -E "Address already in use" >/dev/null; then
             log_error "Sunshine has port conflict - another instance may be running"
             return 1
         fi
         return 0
     fi
-    # Fallback: check log files
+    # Fallback: live log file (may be unreadable when not root)
     local log_dir="${SUNSHINE_LOG_DIR:-/var/log/sunshine}"
     if [[ -f "$log_dir/sunshine.log" ]] && grep -E "Sunshine version" "$log_dir/sunshine.log" >/dev/null 2>&1; then
         return 0

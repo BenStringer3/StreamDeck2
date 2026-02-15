@@ -164,7 +164,7 @@ SUMMARY_FILE="$LOG_DIR/summary.txt"
         echo "✗ Sunshine service: FAIL"
     fi
     
-    if check_sunshine_logs; then
+    if check_sunshine_logs "$LOG_DIR"; then
         echo "✓ Sunshine logs: PASS"
     else
         echo "✗ Sunshine logs: FAIL"
