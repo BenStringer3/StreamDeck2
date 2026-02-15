@@ -193,9 +193,41 @@ fi
 log_info "Collecting process information..."
 ps aux | grep -E "(Xorg|sunshine)" | grep -v grep > "$LOG_DIR/processes.txt" 2>&1 || true
 
+# Logind inhibitors and session idle (monitors never sleep debugging)
+log_info "Collecting logind inhibitors and session state..."
+{
+    echo "=== loginctl list-inhibitors (any entry can prevent screen blank/sleep) ==="
+    loginctl list-inhibitors 2>&1 || true
+    echo ""
+    echo "=== Session(s) with seat (IdleHint / IdleSinceHint) ==="
+    for sid in $(loginctl list-sessions --no-legend 2>/dev/null | awk '{print $1}'); do
+        sseat=$(loginctl show-session "$sid" -p Seat -p Name -p State 2>/dev/null)
+        echo "--- Session $sid ---"
+        echo "$sseat"
+        loginctl show-session "$sid" -p IdleHint -p IdleSinceHint 2>/dev/null || true
+        echo ""
+    done
+} > "$LOG_DIR/loginctl-inhibitors.txt" 2>&1
+
 # Input devices (for concurrency check)
 log_info "Collecting input device information..."
 ls -la /dev/input/by-id/ > "$LOG_DIR/input-devices.txt" 2>&1 || true
+
+# udevadm diagnostics for Sunshine passthrough devices (why udev rule may not match)
+SUNSHINE_NAMES="Mouse passthrough|Mouse passthrough (absolute)|Keyboard passthrough|Touch passthrough|Pen passthrough|Sunshine X-Box One (virtual) pad"
+for dev in /sys/class/input/event*; do
+    [[ -d "$dev" ]] && [[ -f "$dev/device/name" ]] || continue
+    name="$(cat "$dev/device/name" 2>/dev/null)"
+    echo "$name" | grep -qE "^($SUNSHINE_NAMES)$" || continue
+    ev="/dev/input/$(basename "$dev")"
+    {
+        echo "=== $ev ($name) ==="
+        udevadm info -a -n "$ev" 2>/dev/null || true
+        echo "--- udevadm test ---"
+        udevadm test "$(udevadm info -q path -n "$ev" 2>/dev/null)" 2>&1 || true
+    } >> "$LOG_DIR/udevadm-sunshine-devices.txt" 2>/dev/null || true
+done
+[[ -f "$LOG_DIR/udevadm-sunshine-devices.txt" ]] && log_info "Collected udevadm info for Sunshine input devices"
 
 # When run with sudo, make logs/ and this run owned by invoking user so next run without sudo can create new dirs
 if [[ $EUID -eq 0 ]] && [[ -n "${SUDO_UID:-}" ]]; then

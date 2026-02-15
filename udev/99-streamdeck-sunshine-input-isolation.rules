@@ -15,11 +15,14 @@
 # - Sunshine virtual gamepad is isolated the same way so :99 can use it for Eden.
 #
 # Use SUBSYSTEM (not SUBSYSTEMS): for /dev/input/event* the device's subsystem is "input".
+# Use ATTR{name} (device's own attribute); for input event devices the name is often on the
+# device node udev sees. If rule still doesn't match, run udevadm info -a -n /dev/input/eventN
+# and udevadm test to see which attributes exist at which level.
 # Number 99- ensures this runs after 60-input-id etc. so our GROUP is not overridden.
 
-SUBSYSTEM=="input", ATTRS{name}=="Mouse passthrough", GROUP="streamdeck", MODE="0660", TAG-="uaccess"
-SUBSYSTEM=="input", ATTRS{name}=="Mouse passthrough (absolute)", GROUP="streamdeck", MODE="0660", TAG-="uaccess"
-SUBSYSTEM=="input", ATTRS{name}=="Keyboard passthrough", GROUP="streamdeck", MODE="0660", TAG-="uaccess"
-SUBSYSTEM=="input", ATTRS{name}=="Touch passthrough", GROUP="streamdeck", MODE="0660", TAG-="uaccess"
-SUBSYSTEM=="input", ATTRS{name}=="Pen passthrough", GROUP="streamdeck", MODE="0660", TAG-="uaccess"
-SUBSYSTEM=="input", ATTRS{name}=="Sunshine X-Box One (virtual) pad", GROUP="streamdeck", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="input", ATTR{name}=="Mouse passthrough", GROUP="streamdeck", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="input", ATTR{name}=="Mouse passthrough (absolute)", GROUP="streamdeck", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="input", ATTR{name}=="Keyboard passthrough", GROUP="streamdeck", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="input", ATTR{name}=="Touch passthrough", GROUP="streamdeck", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="input", ATTR{name}=="Pen passthrough", GROUP="streamdeck", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="input", ATTR{name}=="Sunshine X-Box One (virtual) pad", GROUP="streamdeck", MODE="0660", TAG-="uaccess"

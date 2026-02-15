@@ -279,16 +279,15 @@ else
     log_warn "sudoers.d/streamdeck-steam.template not found, skipping"
 fi
 
-# Install udev rules (from templates: stream user group for input isolation)
-log_info "Installing udev rules..."
-for template in "$REPO_ROOT"/udev/*.rules.template; do
-    [[ -f "$template" ]] || continue
-    basename_no_tpl="$(basename "$template" .rules.template)"
-    out_name="${basename_no_tpl}.rules"
-    sed "s|__STREAM_GROUP__|$STREAM_GROUP|g" "$template" > "/etc/udev/rules.d/$out_name"
-    log_info "Installed udev rule: $out_name"
-done
-if compgen -G "$REPO_ROOT/udev/*.rules.template" >/dev/null; then
+# Install udev rule for tty device access
+log_info "Installing udev rule for tty access..."
+# We ship udev rules to:
+# - allow streamdeck to access tty (for Xorg/VT edge cases)
+# - isolate Sunshine virtual input devices so Moonlight input doesn't leak into the desktop session
+if compgen -G "$REPO_ROOT/udev/*.rules" >/dev/null; then
+    cp "$REPO_ROOT"/udev/*.rules /etc/udev/rules.d/
+    # Remove obsolete rule from earlier installs (repo now ships only 99-*).
+    rm -f /etc/udev/rules.d/61-streamdeck-sunshine-input-isolation.rules
     udevadm control --reload-rules
     udevadm trigger --subsystem-match=tty
     udevadm trigger --subsystem-match=input
