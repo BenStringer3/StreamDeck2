@@ -4,7 +4,7 @@ Automated setup for reliable game streaming from a Linux PC to a Steam Deck usin
 
 ## Prerequisites
 
-- **Host:** Arch Linux (or compatible); NVIDIA GPU; [yay](https://github.com/Jguer/yay) for AUR.
+- **Host:** Linux with NVIDIA GPU. Arch Linux is tested; see [docs/installing.md](docs/installing.md) for Debian/Ubuntu, Fedora, and other distros. On Arch, [yay](https://github.com/Jguer/yay) is used for AUR packages.
 - **Deck:** Moonlight and the [MoonDeck](https://github.com/FrogTheFrog/moondeck) Decky plugin. The plugin requires MoonDeck Buddy installed on the host for pairing and game launch.
 
 ## Quickstart
@@ -12,6 +12,8 @@ Automated setup for reliable game streaming from a Linux PC to a Steam Deck usin
 ```bash
 ./test-full-cycle.sh
 ```
+
+To install with a different desktop user (for MoonDeck Buddy / Steam): `BUDDY_USER=myuser sudo ./install.sh`. See [docs/installing.md](docs/installing.md) for all options.
 
 This will:
 1. Install dependencies, MoonDeck Buddy, and configure services
@@ -28,7 +30,7 @@ This setup uses a dedicated Xorg display server session (`:99`) isolated from yo
 - **Reliable capture**: Sunshine uses X11 capture backend on the isolated display
 - **Headless-friendly**: Works without physical monitors via EDID override
 
-Sunshine publishes **MoonDeckStream** (and optional Desktop / Steam Big Picture for debug). MoonDeck Buddy runs as your user (e.g. `__BUDDY_USER__`) and is started automatically via systemd user services; Sunshine (as `streamdeck`) invokes the MoonDeckStream binary, which talks to Buddy over HTTP.
+Sunshine publishes **MoonDeckStream** (and optional Desktop / Steam Big Picture for debug). MoonDeck Buddy runs as your desktop user (BUDDY_USER, e.g. the user who ran `sudo ./install.sh`) and is started automatically via systemd user services; Sunshine runs as a dedicated stream user (default `streamdeck`) and invokes MoonDeckStream, which talks to Buddy over HTTP.
 
 ```mermaid
 flowchart TB
@@ -42,17 +44,17 @@ flowchart TB
             Openbox["Openbox\n(window manager)"]
             Sunshine["Sunshine\n(X11 capture, NVENC)"]
         end
-        subgraph buddy_user["User: __BUDDY_USER__ (BUDDY_USER)"]
+        subgraph buddy_user["User: BUDDY_USER (desktop)"]
             Buddy["MoonDeck Buddy\n(HTTP :59999, Steam state)"]
             MDS["MoonDeckStream\n(launched by Sunshine via sudo)"]
         end
-        subgraph systemd_user["systemd (user, __BUDDY_USER__)"]
+        subgraph systemd_user["systemd (user, BUDDY_USER)"]
             buddy_svc["moondeckbuddy.service\n(NO_GUI=1)"]
             buddy_gui_svc["moondeckbuddy-gui-session.service"]
         end
         subgraph config["Config & permissions"]
             apps["apps.json\n(MoonDeckStream, Desktop, Steam BP)"]
-            sudoers["/etc/sudoers.d/streamdeck-steam\n(streamdeck → run as __BUDDY_USER__)"]
+            sudoers["/etc/sudoers.d/streamdeck-steam\n(stream user → run as BUDDY_USER)"]
             xorg_conf["/etc/X11/xorg.conf.d/99-streamdeck.conf"]
         end
     end
@@ -67,7 +69,7 @@ flowchart TB
     xorg_conf -.-> Xorg
     Sunshine --> apps
     Sunshine -->|"capture"| Xorg
-    Sunshine -->|"sudo -u __BUDDY_USER__ … MoonDeckStream"| MDS
+    Sunshine -->|"sudo -u BUDDY_USER … MoonDeckStream"| MDS
     MDS -->|"HTTP / Qt shared memory"| Buddy
     Moonlight <-->|"stream (UDP/TCP)"| Sunshine
     sudoers -.->|"NOPASSWD"| MDS
@@ -89,8 +91,8 @@ sequenceDiagram
     Note over User,Xorg: Start stream
     User->>Moonlight: Select host, launch MoonDeckStream
     Moonlight->>Sunshine: Request stream (launch app)
-    Sunshine->>Sunshine: apps.json → sudo -u __BUDDY_USER__ … MoonDeckStream
-    Sunshine->>MDS: exec (as __BUDDY_USER__, DISPLAY=:99)
+    Sunshine->>Sunshine: apps.json → sudo -u BUDDY_USER … MoonDeckStream
+    Sunshine->>MDS: exec (as BUDDY_USER, DISPLAY=:99)
     MDS->>Buddy: Connect (HTTP :59999 / Qt shm)
     Buddy-->>MDS: Ready
     Sunshine->>Xorg: X11 capture :99
@@ -113,6 +115,7 @@ sequenceDiagram
 - `install.sh` - Idempotent setup (Sunshine, MoonDeck Buddy, systemd, apps.json); runs `collect-logs.sh` on success and on failure
 - `collect-logs.sh` - Diagnostic log collection (Sunshine, Xorg, Buddy, MoonDeck); invoked automatically by install and test
 - `test-full-cycle.sh` - End-to-end test with Buddy/Sunshine health gates and summary; runs `collect-logs.sh` after manual step, on health failure, and on Ctrl+C
+- `docs/installing.md` - Supported distros, env vars, and install options
 - `docs/moondeck.md` - Pinned facts and links for MoonDeck Buddy and Sunshine app config
 - `docs/troubleshooting.md` - Health-check failures, Moonlight issues, firewall, and common errors
 

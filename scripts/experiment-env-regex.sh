@@ -22,12 +22,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$REPO_ROOT/scripts/lib.sh"
+# shellcheck source=scripts/load-install-config.sh
+source "$REPO_ROOT/scripts/load-install-config.sh"
 
 if [[ $EUID -ne 0 ]]; then
     log_fatal "Run with sudo: sudo $REPO_ROOT/scripts/experiment-env-regex.sh [DESKTOP_DISPLAY]"
 fi
-
-BUDDY_USER="${BUDDY_USER:-__BUDDY_USER__}"
 if ! id "$BUDDY_USER" &>/dev/null; then
     log_fatal "Buddy user $BUDDY_USER not found. Set BUDDY_USER or create the user."
 fi

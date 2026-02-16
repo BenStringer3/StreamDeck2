@@ -10,11 +10,12 @@ x11_display = :99
 # Encoder: NVIDIA NVENC hardware encoding
 encoder = nvenc
 
-# Force Sunshine to use the NVIDIA 3090 Ti for NVENC (PCI bus id)
-# Format: 00000000:BB:DD.F (Bus:Device.Function in hex)
-adapter_name = 00000000:01:00.0
+# GPU for NVENC (PCI bus id). Replace with your GPU's Bus:Device.Function (hex).
+# Find with: nvidia-smi -q | grep "Bus Id" or lspci | grep -i nvidia (format 0000:BB:DD.F → 00000000:BB:DD.F).
+# Install substitutes __ADAPTER_NAME__ from ADAPTER_NAME env or leaves this default.
+adapter_name = __ADAPTER_NAME__
 
-# Log directory (must be writable by streamdeck user)
+# Log directory (must be writable by stream user)
 # Logs will be collected by collect-logs.sh
 log_dir = /var/log/sunshine
 
@@ -25,7 +26,7 @@ port = 47989
 web_port = 47984
 
 # Disable system tray (causes crashes in headless environment without GUI dependencies)
-# The system tray requires GTK and bwrap which aren't available in the streamdeck user session
+# The system tray requires GTK and bwrap which aren't available in the stream user session
 system_tray = 0
 
 # Note: Resolution is controlled by Xorg configuration (1280x800)

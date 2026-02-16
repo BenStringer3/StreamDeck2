@@ -7,25 +7,25 @@ Documentation=https://github.com/lizardbyte/sunshine
 [Service]
 # Type=simple because Xorg doesn't support systemd notify protocol
 Type=simple
-User=streamdeck
-Group=streamdeck
+User=__STREAM_USER__
+Group=__STREAM_GROUP__
 # Xorg needs to run on a specific display
-Environment="DISPLAY=:99"
-# Xorg log location (in streamdeck-owned directory)
-Environment="XORG_LOG=/var/log/streamdeck/Xorg.99.log"
+Environment="DISPLAY=__STREAM_DISPLAY__"
+# Xorg log location (in stream user's log directory)
+Environment="XORG_LOG=/var/log/__STREAM_USER__/Xorg.99.log"
 # Use the generated Xorg config
 # -config: use our dummy driver config
 # -configdir "": prevent loading additional configs (avoids NVIDIA driver conflicts)
 # -nolisten tcp: disable network connections for security
 # -novtswitch: don't switch VTs
 # -sharevts: allow running without exclusive VT access
-ExecStart=/usr/bin/Xorg :99 -config /etc/X11/xorg.conf.d/99-streamdeck.conf -configdir "" -logfile ${XORG_LOG} -nolisten tcp -novtswitch -sharevts
+ExecStart=/usr/bin/Xorg __STREAM_DISPLAY__ -config /etc/X11/xorg.conf.d/99-streamdeck.conf -configdir "" -logfile ${XORG_LOG} -nolisten tcp -novtswitch -sharevts
 # Wait for Xorg to be ready before considering the service started
-ExecStartPost=/bin/sh -c 'for i in {1..30}; do DISPLAY=:99 xrandr --query > /dev/null 2>&1 && exit 0; sleep 0.5; done; exit 1'
-# Start a lightweight window manager on :99.
+ExecStartPost=/bin/sh -c 'for i in {1..30}; do DISPLAY=__STREAM_DISPLAY__ xrandr --query > /dev/null 2>&1 && exit 0; sleep 0.5; done; exit 1'
+# Start a lightweight window manager on the stream display.
 # Many apps (including Qt apps like Eden) request fullscreen via EWMH (_NET_WM_STATE_FULLSCREEN).
 # Without a WM, those hints are ignored and you get a small centered window.
-ExecStartPost=/bin/sh -c 'DISPLAY=:99 pgrep -u streamdeck -x openbox >/dev/null 2>&1 || (DISPLAY=:99 openbox >/dev/null 2>&1 &)'
+ExecStartPost=/bin/sh -c 'DISPLAY=__STREAM_DISPLAY__ pgrep -u __STREAM_USER__ -x openbox >/dev/null 2>&1 || (DISPLAY=__STREAM_DISPLAY__ openbox >/dev/null 2>&1 &)'
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

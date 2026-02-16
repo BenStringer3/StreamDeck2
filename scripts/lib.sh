@@ -145,28 +145,48 @@ get_kernel_version() {
     uname -a
 }
 
-# Detect installed NVIDIA driver package
-# Returns the package name if found, empty string if not found
+# Detect installed NVIDIA driver package (distribution-agnostic)
+# Returns the package name or a label if found; empty and return 1 if not found
 detect_nvidia_driver() {
-    # Check for common NVIDIA driver packages
-    local drivers=(
-        "nvidia-open-dkms"
-        "nvidia-open"
-        "nvidia-open-lts"
-        "nvidia"
-        "nvidia-dkms"
-        "nvidia-lts"
-        "nvidia-580xx-dkms"
-    )
-    
-    for driver in "${drivers[@]}"; do
-        if pacman -Q "$driver" &>/dev/null; then
-            echo "$driver"
+    # Arch: pacman
+    if command -v pacman &>/dev/null; then
+        local drivers=(nvidia-open-dkms nvidia-open nvidia-open-lts nvidia nvidia-dkms nvidia-lts nvidia-580xx-dkms)
+        for driver in "${drivers[@]}"; do
+            if pacman -Q "$driver" &>/dev/null; then
+                echo "$driver"
+                return 0
+            fi
+        done
+    fi
+
+    # Debian/Ubuntu: dpkg
+    if command -v dpkg &>/dev/null; then
+        local pkg
+        pkg=$(dpkg -l 2>/dev/null | awk '$2 ~ /^nvidia-(driver|utils)/ && $1 == "ii" {print $2; exit}')
+        if [[ -n "$pkg" ]]; then
+            echo "$pkg"
             return 0
         fi
-    done
-    
-    # No driver package found
+    fi
+
+    # Fedora/RHEL: rpm
+    if command -v rpm &>/dev/null; then
+        if rpm -q akmod-nvidia &>/dev/null; then
+            echo "akmod-nvidia"
+            return 0
+        fi
+        if rpm -q nvidia-driver &>/dev/null; then
+            echo "nvidia-driver"
+            return 0
+        fi
+    fi
+
+    # Fallback: nvidia-smi present => assume driver installed
+    if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
+        echo "nvidia (nvidia-smi)"
+        return 0
+    fi
+
     return 1
 }
 

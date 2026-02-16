@@ -10,6 +10,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$REPO_ROOT/scripts/lib.sh"
+# shellcheck source=scripts/load-install-config.sh
+source "$REPO_ROOT/scripts/load-install-config.sh"
 
 LOG_DIR="${1:-}"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
@@ -24,7 +26,7 @@ fi
 DETAIL="$OUT_DIR/input-pipeline-detail.txt"
 SUMMARY="$OUT_DIR/input-pipeline-summary.txt"
 
-# Accumulate summary lines and exit code
+# Accumulate summary lines and exit codewdwd
 SUMMARY_LINES=()
 EXIT_CODE=0
 
@@ -87,12 +89,12 @@ if systemctl cat "$SUNSHINE_UNIT" &>/dev/null; then
     fi
 fi
 echo "Checked systemd $SUNSHINE_UNIT for SUNSHINE_CONFIG_DIR/--config" >> "$DETAIL"
-# 2) Known paths
+# 2) Known paths (stream user and buddy user from install config)
 KNOWN_APPS=(
-    "/home/streamdeck/.config/sunshine/apps.json"
+    "/home/$STREAM_USER/.config/sunshine/apps.json"
     "/etc/sunshine/apps.json"
     "/var/lib/sunshine/apps.json"
-    "/home/__BUDDY_USER__/.config/sunshine/apps.json"
+    "/home/$BUDDY_USER/.config/sunshine/apps.json"
 )
 for p in "${KNOWN_APPS[@]}"; do
     echo "Checked: $p" >> "$DETAIL"
@@ -108,7 +110,7 @@ fi
 echo "Using: $APPS_JSON" >> "$DETAIL"
 pass "Sunshine apps.json found: $APPS_JSON"
 
-# Read apps.json (may need sudo for streamdeck's file)
+# Read apps.json (may need sudo for stream user's file)
 APPS_CONTENT=""
 if [[ -r "$APPS_JSON" ]]; then
     APPS_CONTENT="$(cat "$APPS_JSON")"
@@ -163,12 +165,12 @@ if [[ -n "$SUNSHINE_EVENT" ]]; then
     done < <(udevadm info -q property -n "$SUNSHINE_EVENT" 2>/dev/null)
     echo "GROUP=$UDEV_GROUP" >> "$DETAIL"
     echo "TAGS=$UDEV_TAGS" >> "$DETAIL"
-    if [[ "$UDEV_GROUP" != "streamdeck" ]]; then
-        echo "Invariant violated: GROUP must be streamdeck" >> "$DETAIL"
-        fail "udev GROUP is '$UDEV_GROUP', expected streamdeck"
+    if [[ "$UDEV_GROUP" != "$STREAM_GROUP" ]]; then
+        echo "Invariant violated: GROUP must be $STREAM_GROUP" >> "$DETAIL"
+        fail "udev GROUP is '$UDEV_GROUP', expected $STREAM_GROUP"
         UDEV_FAIL=1
     else
-        pass "udev GROUP=streamdeck"
+        pass "udev GROUP=$STREAM_GROUP"
     fi
     if echo ",$UDEV_TAGS," | grep -q ',uaccess,'; then
         echo "Invariant violated: uaccess tag must be absent" >> "$DETAIL"
@@ -189,7 +191,7 @@ if [[ -n "$SUNSHINE_EVENT" ]]; then
     if command -v lsof &>/dev/null; then
         LSOF_OUT="$(sudo lsof "$SUNSHINE_EVENT" 2>&1)" || true
         echo "$LSOF_OUT" >> "$DETAIL"
-        X99_PIDS="$(pgrep -u streamdeck -x Xorg 2>/dev/null || true)"
+        X99_PIDS="$(pgrep -u "$STREAM_USER" -x Xorg 2>/dev/null || true)"
         DESKTOP_HAS_IT=0
         X99_HAS_IT=0
         while IFS= read -r line; do
@@ -211,7 +213,7 @@ if [[ -n "$SUNSHINE_EVENT" ]]; then
             pass "Desktop does not have Sunshine device open"
         fi
         if [[ $X99_HAS_IT -eq 0 ]] && [[ -n "$X99_PIDS" ]]; then
-            fail "Xorg :99 (streamdeck) does not have Sunshine device open"
+            fail "Xorg :99 ($STREAM_USER) does not have Sunshine device open"
             OPEN_FAIL=1
         elif [[ $X99_HAS_IT -eq 1 ]]; then
             pass "Xorg :99 has Sunshine device open"
@@ -223,10 +225,10 @@ if [[ -n "$SUNSHINE_EVENT" ]]; then
         echo "$FUSER_OUT" >> "$DETAIL"
         pass "fuser used (lsof not installed)"
         # Still check who has it
-        if echo "$FUSER_OUT" | grep -q streamdeck; then
-            pass "streamdeck has device (from fuser)"
+        if echo "$FUSER_OUT" | grep -q "$STREAM_USER"; then
+            pass "$STREAM_USER has device (from fuser)"
         else
-            fail "streamdeck may not have device; fuser output above"
+            fail "$STREAM_USER may not have device; fuser output above"
         fi
     else
         echo "ERROR: neither lsof nor fuser available" >> "$DETAIL"
@@ -236,6 +238,61 @@ if [[ -n "$SUNSHINE_EVENT" ]]; then
 else
     echo "No Sunshine device" >> "$DETAIL"
     skip "open handles (no Sunshine device)"
+fi
+
+# --- OPEN HANDLES (all Sunshine devices: mouse, keyboard, gamepad, etc.) ---
+# Who has each device matters for "cursor not moving in game" vs "linked cursor on desktop"
+section "OPEN HANDLES (all Sunshine devices)" >> "$DETAIL"
+SUNSHINE_NAMES=(
+    "Mouse passthrough"
+    "Mouse passthrough (absolute)"
+    "Keyboard passthrough"
+    "Touch passthrough"
+    "Pen passthrough"
+    "Sunshine X-Box One (virtual) pad"
+)
+X99_PIDS_ALL="$(pgrep -u "$STREAM_USER" -x Xorg 2>/dev/null || true)"
+DESKTOP_HAS_SUNSHINE=0
+FOUND_SUNSHINE_DEVICE=0
+for dev in /sys/class/input/event*; do
+    [[ -d "$dev" ]] || continue
+    [[ -f "$dev/device/name" ]] || continue
+    name="$(cat "$dev/device/name")"
+    for want in "${SUNSHINE_NAMES[@]}"; do
+        if [[ "$name" == "$want" ]]; then
+            FOUND_SUNSHINE_DEVICE=1
+            ev="/dev/input/$(basename "$dev")"
+            echo "--- $ev ($name) ---" >> "$DETAIL"
+            # Record device node perms (GROUP=STREAM_GROUP from udev expected)
+            ls -l "$ev" >> "$DETAIL" 2>/dev/null || true
+            if command -v lsof &>/dev/null; then
+                LSOF_ALL="$(sudo lsof "$ev" 2>&1)" || true
+                echo "$LSOF_ALL" >> "$DETAIL"
+                while IFS= read -r line; do
+                    [[ "$line" =~ ^(COMMAND|[[:space:]]*$) ]] && continue
+                    pid="$(echo "$line" | awk '{print $2}')"
+                    [[ "$pid" =~ ^[0-9]+$ ]] || continue
+                    comm="$(ps -o comm= -p "$pid" 2>/dev/null || echo "?")"
+                    user="$(ps -o user= -p "$pid" 2>/dev/null || echo "?")"
+                    if echo "$X99_PIDS_ALL" | grep -q "^${pid}$"; then
+                        echo "  -> PID $pid ($comm) user=$user [Xorg :99]" >> "$DETAIL"
+                    else
+                        echo "  -> PID $pid ($comm) user=$user" >> "$DETAIL"
+                        # Desktop leakage: non-root, non-stream process has Sunshine device open
+                        if [[ "$user" != "root" ]] && [[ "$user" != "$STREAM_USER" ]]; then
+                            DESKTOP_HAS_SUNSHINE=1
+                        fi
+                    fi
+                done <<< "$LSOF_ALL"
+            fi
+            break
+        fi
+    done
+done
+if [[ $DESKTOP_HAS_SUNSHINE -ne 0 ]]; then
+    fail "Desktop has Sunshine input devices open (trackpad moves PC cursor)"
+elif [[ $FOUND_SUNSHINE_DEVICE -ne 0 ]]; then
+    pass "Desktop does not have Sunshine input devices open"
 fi
 
 # --- XORG :99 (XINPUT) ---
@@ -250,14 +307,14 @@ for pid in $(pgrep -x Xorg 2>/dev/null); do
         break
     fi
 done
-[[ -z "$XAUTHORITY_PATH" ]] && XAUTHORITY_PATH="/home/streamdeck/.Xauthority"
+[[ -z "$XAUTHORITY_PATH" ]] && XAUTHORITY_PATH="/home/$STREAM_USER/.Xauthority"
 echo "XAUTHORITY_PATH=$XAUTHORITY_PATH" >> "$DETAIL"
 if ! command -v xinput &>/dev/null; then
     echo "xinput not installed" >> "$DETAIL"
     skip "xinput not installed"
 else
     XINPUT_OUT="$OUT_DIR/xinput-list.txt"
-    if sudo -u streamdeck env DISPLAY=:99 XAUTHORITY="$XAUTHORITY_PATH" xinput list &> "$XINPUT_OUT"; then
+    if sudo -u "$STREAM_USER" env DISPLAY=:99 XAUTHORITY="$XAUTHORITY_PATH" xinput list &> "$XINPUT_OUT"; then
         cat "$XINPUT_OUT" >> "$DETAIL"
         pass "xinput list (Xorg :99) succeeded"
     else

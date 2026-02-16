@@ -3,12 +3,12 @@
 
 set -euo pipefail
 
-# Source shared library
+# Source shared library and install config
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
 source "$REPO_ROOT/scripts/lib.sh"
-
-STREAM_DISPLAY="${STREAM_DISPLAY:-:99}"
+# shellcheck source=scripts/load-install-config.sh
+source "$REPO_ROOT/scripts/load-install-config.sh"
 
 # On interrupt (e.g. Ctrl+C during manual test), collect logs then exit
 cleanup_on_interrupt() {
@@ -66,11 +66,10 @@ log_info "✓ All health checks passed"
 log_info ""
 
 # MoonDeck Buddy and Sunshine app gates (required for MoonDeck workflow)
-BUDDY_USER="${BUDDY_USER:-__BUDDY_USER__}"
-APPS_JSON="/home/streamdeck/.config/sunshine/apps.json"
+APPS_JSON="/home/$STREAM_USER/.config/sunshine/apps.json"
 if id "$BUDDY_USER" &>/dev/null; then
-    BEN_UID=$(id -u "$BUDDY_USER")
-    if ! sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$BEN_UID" systemctl --user is-active moondeckbuddy.service &>/dev/null; then
+    BUDDY_UID=$(id -u "$BUDDY_USER")
+    if ! sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$BUDDY_UID" systemctl --user is-active moondeckbuddy.service &>/dev/null; then
         log_error "MoonDeck Buddy is not running under $BUDDY_USER. Start it with: sudo -u $BUDDY_USER systemctl --user start moondeckbuddy.service"
         log_error "If autostart is not configured: sudo -u $BUDDY_USER MoonDeckBuddy --enable-autostart && sudo -u $BUDDY_USER systemctl --user enable --now moondeckbuddy.service"
         exit 1
@@ -234,8 +233,8 @@ SUMMARY_FILE="$LOG_DIR/summary.txt"
     echo ""
     echo "=== MoonDeck Buddy ==="
     if id "$BUDDY_USER" &>/dev/null; then
-        BEN_UID=$(id -u "$BUDDY_USER")
-        if sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$BEN_UID" systemctl --user is-active moondeckbuddy.service &>/dev/null; then
+        BUDDY_UID=$(id -u "$BUDDY_USER")
+        if sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$BUDDY_UID" systemctl --user is-active moondeckbuddy.service &>/dev/null; then
             echo "✓ moondeckbuddy.service: active"
         else
             echo "✗ moondeckbuddy.service: not active"
