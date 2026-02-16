@@ -22,9 +22,14 @@ else
 
     # Env overrides whatever was in config
     STREAM_USER="${STREAM_USER:-streamdeck}"
-    BUDDY_USER="${BUDDY_USER:-$SUDO_USER}"
-    BUDDY_USER="${BUDDY_USER:-$(logname 2>/dev/null)}"
-    BUDDY_USER="${BUDDY_USER:-__BUDDY_USER__}"
+    # BUDDY_USER detection: prefer env var, then SUDO_USER, then logname (skip root)
+    BUDDY_USER="${BUDDY_USER:-${SUDO_USER:-}}"
+    if [[ -z "$BUDDY_USER" ]]; then
+        LOGNAME_USER=$(logname 2>/dev/null || true)
+        if [[ -n "$LOGNAME_USER" && "$LOGNAME_USER" != "root" ]]; then
+            BUDDY_USER="$LOGNAME_USER"
+        fi
+    fi
     STREAM_DISPLAY="${STREAM_DISPLAY:-:99}"
     STREAM_GROUP="${STREAM_GROUP:-$STREAM_USER}"
 fi

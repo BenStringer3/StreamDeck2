@@ -11,9 +11,20 @@ source "$REPO_ROOT/scripts/lib.sh"
 # Configuration (BUDDY_USER defaults to user who ran sudo; see docs/installing.md)
 STREAM_USER="${STREAM_USER:-streamdeck}"
 STREAM_DISPLAY="${STREAM_DISPLAY:-:99}"
-BUDDY_USER="${BUDDY_USER:-$SUDO_USER}"
-BUDDY_USER="${BUDDY_USER:-$(logname 2>/dev/null)}"
-BUDDY_USER="${BUDDY_USER:-__BUDDY_USER__}"
+# BUDDY_USER detection: prefer env var, then SUDO_USER, then logname (skip root)
+# Re-detect if BUDDY_USER is root (from stale config or env) and we can determine a better value
+if [[ "${BUDDY_USER:-}" == "root" ]] && [[ -n "${SUDO_USER:-}" ]]; then
+    BUDDY_USER="$SUDO_USER"
+fi
+BUDDY_USER="${BUDDY_USER:-${SUDO_USER:-}}"
+if [[ -z "$BUDDY_USER" ]]; then
+    LOGNAME_USER=$(logname 2>/dev/null || true)
+    if [[ -n "$LOGNAME_USER" && "$LOGNAME_USER" != "root" ]]; then
+        BUDDY_USER="$LOGNAME_USER"
+    fi
+fi
+# Require BUDDY_USER to be set (fail-fast if we can't determine it)
+[[ -n "$BUDDY_USER" ]] || log_fatal "BUDDY_USER not set and could not be determined (set BUDDY_USER env var or run via sudo)"
 STREAM_GROUP="${STREAM_GROUP:-$STREAM_USER}"
 STREAM_HOME="/home/$STREAM_USER"
 
