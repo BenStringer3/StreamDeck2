@@ -1,11 +1,11 @@
-# Allow streamdeck user to run steam, eden, and MoonDeckStream as __BUDDY_USER__ without password or TTY
+# Allow __STREAM_USER__ user to run steam, eden, and MoonDeckStream as __BUDDY_USER__ without password or TTY
 # MoonDeckStream must run as __BUDDY_USER__ to share Qt shared memory with MoonDeck Buddy (same user)
 # This enables the streaming session to launch Steam/Eden with __BUDDY_USER__'s library
 # !requiretty: Allow execution without a TTY (needed for systemd service)
 # env_keep: Preserve environment variables needed for Steam/Eden
 #   - PULSE_SINK: Direct audio to the StreamDeck-Bridge sink for capture
-#   - __NV_PRIME_RENDER_OFFLOAD, __GLX_*, __VK_*: GPU rendering on dummy X display :99
-Defaults:streamdeck !requiretty
+#   - __NV_PRIME_RENDER_OFFLOAD, __GLX_*, __VK_*: GPU rendering on dummy X display
+Defaults:__STREAM_USER__ !requiretty
 # Keep only the minimal environment required for the streaming session to launch apps correctly.
 # - DISPLAY: target the isolated dummy Xorg display (e.g. :99)
 # - XDG_*: user session integration (PipeWire via XDG_RUNTIME_DIR; streaming-only Eden config via XDG_CONFIG_HOME)
@@ -14,7 +14,7 @@ Defaults:streamdeck !requiretty
 # - SUNSHINE_LAUNCHED: MoonDeckStream stream helper only stays running if it sees a SUNSHINE.* env var
 # - TMPDIR: Qt shared-memory key path uses QDir::tempPath(); Buddy and MoonDeckStream must use the same path
 #   or MoonDeckStream cannot read ENV regex from Buddy → black screen, exit 256, Error 11 (see docs/troubleshooting.md)
-Defaults:streamdeck env_keep += "HOME USER XDG_CONFIG_HOME XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS DISPLAY PULSE_SINK SUNSHINE_LAUNCHED TMPDIR __NV_PRIME_RENDER_OFFLOAD __GLX_VENDOR_LIBRARY_NAME __VK_LAYER_NV_optimus"
-streamdeck ALL=(__BUDDY_USER__) NOPASSWD: /usr/bin/steam
-streamdeck ALL=(__BUDDY_USER__) NOPASSWD: /usr/bin/eden
-streamdeck ALL=(__BUDDY_USER__) NOPASSWD: /usr/local/bin/MoonDeckStream
+Defaults:__STREAM_USER__ env_keep += "HOME USER XDG_CONFIG_HOME XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS DISPLAY PULSE_SINK SUNSHINE_LAUNCHED TMPDIR __NV_PRIME_RENDER_OFFLOAD __GLX_VENDOR_LIBRARY_NAME __VK_LAYER_NV_optimus"
+__STREAM_USER__ ALL=(__BUDDY_USER__) NOPASSWD: /usr/bin/steam
+__STREAM_USER__ ALL=(__BUDDY_USER__) NOPASSWD: /usr/bin/eden
+__STREAM_USER__ ALL=(__BUDDY_USER__) NOPASSWD: /usr/local/bin/MoonDeckStream

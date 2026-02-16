@@ -8,9 +8,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
 source "$REPO_ROOT/scripts/lib.sh"
 
-# Configuration
+# Configuration (BUDDY_USER defaults to user who ran sudo; see docs/installing.md)
 STREAM_USER="${STREAM_USER:-streamdeck}"
 STREAM_DISPLAY="${STREAM_DISPLAY:-:99}"
+BUDDY_USER="${BUDDY_USER:-$SUDO_USER}"
+BUDDY_USER="${BUDDY_USER:-$(logname 2>/dev/null)}"
+BUDDY_USER="${BUDDY_USER:-__BUDDY_USER__}"
+STREAM_GROUP="${STREAM_GROUP:-$STREAM_USER}"
+STREAM_HOME="/home/$STREAM_USER"
 
 # Install MoonDeckStream wrapper from scripts/moondeckstream-wrapper.sh (substitutes __REAL_BIN__ and __PRE_ARGS__)
 install_moondeckstream_wrapper() {
@@ -31,11 +36,22 @@ log_info "Starting Stream Deck setup (Option B: separate Xorg session)"
 # Check if running as root
 assert_root
 
+# Write install config so other scripts (collect-logs, check-input-pipeline, etc.) can read it
+mkdir -p /etc/streamdeck
+cat > /etc/streamdeck/install.conf << CONFIG
+STREAM_USER=$STREAM_USER
+BUDDY_USER=$BUDDY_USER
+STREAM_DISPLAY=$STREAM_DISPLAY
+STREAM_GROUP=$STREAM_GROUP
+CONFIG
+chmod 644 /etc/streamdeck/install.conf
+log_info "Wrote /etc/streamdeck/install.conf (STREAM_USER=$STREAM_USER BUDDY_USER=$BUDDY_USER)"
+
 # Detect system state
 log_info "Probing system state..."
 
-# Check for existing EDID file
-EDID_PATH="/etc/X11/edid/steamdeck-edid.bin"
+# Check for existing EDID file (override with EDID_PATH env; see docs/installing.md)
+EDID_PATH="${EDID_PATH:-/etc/X11/edid/steamdeck-edid.bin}"
 if [[ -f "$EDID_PATH" ]]; then
     log_info "Found existing EDID file: $EDID_PATH"
 else
@@ -55,54 +71,69 @@ INSTALLED_NVIDIA_DRIVER=""
 if INSTALLED_NVIDIA_DRIVER=$(detect_nvidia_driver); then
     log_info "Found installed NVIDIA driver: $INSTALLED_NVIDIA_DRIVER"
 else
-    log_fatal "No NVIDIA driver package detected. Please install one of: nvidia-open-dkms, nvidia-open, nvidia, nvidia-dkms"
+    log_fatal "No NVIDIA driver detected. Install an NVIDIA driver for your distro (see docs/installing.md)."
 fi
 
-# Install dependencies
-log_info "Installing dependencies..."
-# Only install nvidia-utils (provides nvidia-smi) - skip kernel driver package since it's already installed
-# xf86-video-dummy: dummy driver for headless Xorg; pipewire/pipewire-pulse for streamdeck audio capture
-# openbox: lightweight window manager on :99 (needed so apps can request fullscreen via EWMH)
-# xterm: Sunshine Desktop app runs this on :99 when user launches Desktop from Moonlight
-pacman -Sy --noconfirm --needed \
-    xorg-server \
-    xorg-xrandr \
-    xf86-video-dummy \
-    openbox \
-    xterm \
-    nvidia-utils \
-    wl-clipboard || log_fatal "Failed to install dependencies"
-
-# Install sunshine from AUR (idempotent)
-log_info "Installing sunshine from AUR..."
-if ! pacman -Q sunshine &>/dev/null; then
-    # Check if yay is available
-    if ! command -v yay &>/dev/null; then
-        log_fatal "yay AUR helper not found. Please install yay first: pacman -S --needed base-devel git && cd /tmp && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si"
-    fi
-    # Install sunshine from AUR (yay handles dropping root privileges automatically)
-    yay -S --needed --noconfirm sunshine || log_fatal "Failed to install sunshine from AUR"
-else
-    log_info "sunshine is already installed"
-fi
-
-# Install MoonDeck Buddy (host helper for MoonDeck plugin). Runs as user __BUDDY_USER__; Sunshine invokes MoonDeckStream.
-log_info "Installing MoonDeck Buddy..."
+# Package and Sunshine/Buddy install (skip when SKIP_DEPS=1; see docs/installing.md)
 MOONDECK_APPIMAGE="/opt/moondeckbuddy/MoonDeckBuddy.AppImage"
 MOONDECK_OPT_DIR="/opt/moondeckbuddy"
 BUDDY_INSTALLED=0
-if pacman -Q moondeckbuddy-appimage &>/dev/null; then
-    log_info "moondeckbuddy-appimage already installed"
-    BUDDY_INSTALLED=1
-elif command -v yay &>/dev/null; then
-    if yay -S --needed --noconfirm moondeckbuddy-appimage; then
-        BUDDY_INSTALLED=1
-    else
-        log_warn "AUR install of moondeckbuddy-appimage failed, will try AppImage fallback"
-    fi
+
+if [[ "${SKIP_DEPS:-0}" == "1" ]]; then
+    log_info "SKIP_DEPS=1: skipping package and AUR installation"
+    command -v sunshine &>/dev/null || log_warn "sunshine not in PATH; ensure Sunshine is installed"
 else
-    log_warn "yay not available, will try AppImage fallback"
+    # Detect distro from /etc/os-release
+    OS_ID=""
+    if [[ -f /etc/os-release ]]; then
+        # shellcheck source=/dev/null
+        source /etc/os-release
+        OS_ID="${ID:-}"
+        [[ -z "$OS_ID" && -n "${ID_LIKE:-}" ]] && OS_ID="${ID_LIKE%% *}"
+    fi
+
+    case "${OS_ID:-}" in
+        arch)
+            log_info "Installing dependencies (Arch)..."
+            pacman -Sy --noconfirm --needed \
+                xorg-server xorg-xrandr xf86-video-dummy openbox xterm nvidia-utils wl-clipboard \
+                || log_fatal "Failed to install dependencies"
+            log_info "Installing sunshine from AUR..."
+            if ! pacman -Q sunshine &>/dev/null; then
+                command -v yay &>/dev/null || log_fatal "yay not found. Install yay or set SKIP_DEPS=1 and install Sunshine manually (see docs/installing.md)"
+                yay -S --needed --noconfirm sunshine || log_fatal "Failed to install sunshine from AUR"
+            else
+                log_info "sunshine is already installed"
+            fi
+            if pacman -Q moondeckbuddy-appimage &>/dev/null; then
+                BUDDY_INSTALLED=1
+            elif command -v yay &>/dev/null && yay -S --needed --noconfirm moondeckbuddy-appimage; then
+                BUDDY_INSTALLED=1
+            else
+                log_warn "AUR moondeckbuddy-appimage failed or unavailable, will try AppImage fallback"
+            fi
+            ;;
+        debian|ubuntu)
+            log_info "Installing dependencies (Debian/Ubuntu)..."
+            apt-get update -qq && apt-get install -y -qq \
+                xserver-xorg xserver-xorg-video-dummy openbox xterm nvidia-utils wl-clipboard \
+                || log_fatal "Failed to install dependencies"
+            command -v sunshine &>/dev/null || log_warn "Sunshine not in PATH. Install from PPA or AppImage (see docs/installing.md)"
+            ;;
+        fedora)
+            log_info "Installing dependencies (Fedora)..."
+            dnf install -y xorg-x11-server-Xorg xorg-x11-server-Xorg-xorg-dummy openbox xterm nvidia-utils wl-clipboard \
+                || log_fatal "Failed to install dependencies"
+            command -v sunshine &>/dev/null || log_warn "Sunshine not in PATH. Install manually (see docs/installing.md)"
+            ;;
+        *)
+            log_fatal "Unsupported distro (ID=$OS_ID). Install dependencies manually (see docs/installing.md) and set SKIP_DEPS=1 to run the rest of install."
+            ;;
+    esac
 fi
+
+# Install MoonDeck Buddy if not already installed (AppImage fallback on any distro)
+log_info "Installing MoonDeck Buddy..."
 # Fallback: install AppImage to stable path and create wrappers
 if [[ $BUDDY_INSTALLED -eq 0 ]] || ! command -v MoonDeckStream &>/dev/null; then
     mkdir -p "$MOONDECK_OPT_DIR"
@@ -161,8 +192,7 @@ if ! command -v MoonDeckBuddy &>/dev/null || ! command -v MoonDeckStream &>/dev/
 fi
 log_info "MoonDeck Buddy install OK"
 
-# Configure MoonDeck Buddy autostart as user __BUDDY_USER__ (systemd user services). Headless mode for reliability.
-BUDDY_USER="${BUDDY_USER:-__BUDDY_USER__}"
+# Configure MoonDeck Buddy autostart (systemd user services). Headless mode for reliability.
 if id "$BUDDY_USER" &>/dev/null; then
     log_info "Configuring MoonDeck Buddy autostart for user $BUDDY_USER..."
     # Enable autostart via CLI if supported (creates systemd user services)
@@ -170,10 +200,10 @@ if id "$BUDDY_USER" &>/dev/null; then
         log_info "MoonDeck Buddy --enable-autostart succeeded"
     fi
     # Ensure headless unit runs with NO_GUI=1 so Buddy does not depend on compositor/display
-    BEN_USER_UNIT_DIR="/home/$BUDDY_USER/.config/systemd/user"
-    OVERRIDE_DIR="$BEN_USER_UNIT_DIR/moondeckbuddy.service.d"
+    BUDDY_USER_UNIT_DIR="/home/$BUDDY_USER/.config/systemd/user"
+    OVERRIDE_DIR="$BUDDY_USER_UNIT_DIR/moondeckbuddy.service.d"
     mkdir -p "$OVERRIDE_DIR"
-    chown -R "$BUDDY_USER:$BUDDY_USER" "$BEN_USER_UNIT_DIR"
+    chown -R "$BUDDY_USER:$BUDDY_USER" "$BUDDY_USER_UNIT_DIR"
     if [[ ! -f "$OVERRIDE_DIR/override.conf" ]]; then
         cat > "$OVERRIDE_DIR/override.conf" << 'OVEREOF'
 # Force headless mode so Buddy does not crash when display/compositor is unavailable
@@ -201,7 +231,7 @@ else
     log_warn "User $BUDDY_USER not found; skip Buddy autostart. Create user and run: sudo -u $BUDDY_USER MoonDeckBuddy --enable-autostart && systemctl --user enable --now moondeckbuddy.service"
 fi
 
-# Create streamdeck user if it doesn't exist
+# Create stream user if it doesn't exist
 if ! id "$STREAM_USER" &>/dev/null; then
     log_info "Creating user: $STREAM_USER"
     useradd -r -m -s /bin/bash -G video,input,tty "$STREAM_USER" || log_fatal "Failed to create user"
@@ -215,19 +245,19 @@ fi
 log_info "Creating directories..."
 mkdir -p /etc/X11/xorg.conf.d
 mkdir -p /etc/X11/edid
-mkdir -p /home/"$STREAM_USER"/.config/sunshine
+mkdir -p "$STREAM_HOME/.config/sunshine"
 mkdir -p /var/log/sunshine
-mkdir -p /var/log/streamdeck
-chown -R "$STREAM_USER:$STREAM_USER" /home/"$STREAM_USER"/.config
+mkdir -p "/var/log/$STREAM_USER"
+chown -R "$STREAM_USER:$STREAM_USER" "$STREAM_HOME/.config"
 chown -R "$STREAM_USER:$STREAM_USER" /var/log/sunshine
-chown -R "$STREAM_USER:$STREAM_USER" /var/log/streamdeck
+chown -R "$STREAM_USER:$STREAM_USER" "/var/log/$STREAM_USER"
 
 # Configure Xwrapper to allow non-console users to run Xorg
-# This is required for the streamdeck user to start Xorg from systemd
+# This is required for the stream user to start Xorg from systemd
 log_info "Configuring Xwrapper..."
 cat > /etc/X11/Xwrapper.config <<EOF
-# Allow any user to run Xorg (required for systemd service running as streamdeck user)
-# Security: The streamdeck user is restricted and only runs the isolated streaming session
+# Allow any user to run Xorg (required for systemd service running as stream user)
+# Security: The stream user is restricted and only runs the isolated streaming session
 allowed_users=anybody
 EOF
 
@@ -237,31 +267,34 @@ if [[ ! -f /etc/X11/Xwrapper.config ]]; then
 fi
 log_info "Xwrapper configured: $(cat /etc/X11/Xwrapper.config | grep allowed_users)"
 
-# Configure sudo to allow streamdeck user to run steam as __BUDDY_USER__
-# This enables launching Steam with __BUDDY_USER__'s library from the streaming session
+# Configure sudo to allow stream user to run steam/eden/MoonDeckStream as BUDDY_USER
 log_info "Configuring sudoers for Steam access..."
-if [[ -f "$REPO_ROOT/sudoers.d/streamdeck-steam" ]]; then
-    install -m 0440 "$REPO_ROOT/sudoers.d/streamdeck-steam" /etc/sudoers.d/streamdeck-steam
+SUDOERS_TEMPLATE="$REPO_ROOT/sudoers.d/streamdeck-steam.template"
+if [[ -f "$SUDOERS_TEMPLATE" ]]; then
+    sed -e "s|__STREAM_USER__|$STREAM_USER|g" -e "s|__BUDDY_USER__|$BUDDY_USER|g" "$SUDOERS_TEMPLATE" > /etc/sudoers.d/streamdeck-steam
+    chmod 0440 /etc/sudoers.d/streamdeck-steam
     visudo -c -f /etc/sudoers.d/streamdeck-steam || log_fatal "Invalid sudoers file"
     log_info "Sudoers configured for Steam access"
 else
-    log_warn "sudoers.d/streamdeck-steam not found, skipping"
+    log_warn "sudoers.d/streamdeck-steam.template not found, skipping"
 fi
 
-# Install udev rule for tty device access
-log_info "Installing udev rule for tty access..."
-# We ship udev rules to:
-# - allow streamdeck to access tty (for Xorg/VT edge cases)
-# - isolate Sunshine virtual input devices so Moonlight input doesn't leak into the desktop session
-if compgen -G "$REPO_ROOT/udev/*.rules" >/dev/null; then
-    cp "$REPO_ROOT"/udev/*.rules /etc/udev/rules.d/
+# Install udev rules (from templates: stream user group for input isolation)
+log_info "Installing udev rules..."
+for template in "$REPO_ROOT"/udev/*.rules.template; do
+    [[ -f "$template" ]] || continue
+    basename_no_tpl="$(basename "$template" .rules.template)"
+    out_name="${basename_no_tpl}.rules"
+    sed "s|__STREAM_GROUP__|$STREAM_GROUP|g" "$template" > "/etc/udev/rules.d/$out_name"
+    log_info "Installed udev rule: $out_name"
+done
+if compgen -G "$REPO_ROOT/udev/*.rules.template" >/dev/null; then
     udevadm control --reload-rules
-    # Re-apply rules to the relevant subsystems.
     udevadm trigger --subsystem-match=tty
     udevadm trigger --subsystem-match=input
-    log_info "Installed udev rules from: $REPO_ROOT/udev/"
-else
-    log_warn "No udev rules found in: $REPO_ROOT/udev/"
+fi
+if ! compgen -G "$REPO_ROOT/udev/*.rules.template" >/dev/null; then
+    log_warn "No udev rule templates found in: $REPO_ROOT/udev/"
 fi
 
 # Install Xorg config
@@ -277,10 +310,11 @@ fi
 
 # Install Sunshine config
 log_info "Installing Sunshine configuration..."
-SUNSHINE_CONF="/home/$STREAM_USER/.config/sunshine/sunshine.conf"
+SUNSHINE_CONF="$STREAM_HOME/.config/sunshine/sunshine.conf"
 if [[ -f "$REPO_ROOT/sunshine/sunshine.conf.template" ]]; then
-    # Substitute DISPLAY variable
-    sed "s|:99|$STREAM_DISPLAY|g" "$REPO_ROOT/sunshine/sunshine.conf.template" > "$SUNSHINE_CONF"
+    # Substitute DISPLAY and optional ADAPTER_NAME (GPU PCI id for NVENC; see docs/installing.md)
+    ADAPTER_NAME="${ADAPTER_NAME:-00000000:01:00.0}"
+    sed -e "s|:99|$STREAM_DISPLAY|g" -e "s|__ADAPTER_NAME__|$ADAPTER_NAME|g" "$REPO_ROOT/sunshine/sunshine.conf.template" > "$SUNSHINE_CONF"
     chown "$STREAM_USER:$STREAM_USER" "$SUNSHINE_CONF"
     log_info "Installed Sunshine config: $SUNSHINE_CONF"
 else
@@ -292,7 +326,7 @@ fi
 # MoonDeckStream must run as Buddy user (same user as Buddy) and with SUNSHINE_LAUNCHED=1, DISPLAY, etc.
 # MoonDeckStream app cmd is /usr/local/bin/MoonDeckStream (wrapper that kills stale PIDs and exec's real binary).
 log_info "Installing Sunshine apps.json..."
-APPS_JSON="/home/$STREAM_USER/.config/sunshine/apps.json"
+APPS_JSON="$STREAM_HOME/.config/sunshine/apps.json"
 BUDDY_UID=""
 if id "$BUDDY_USER" &>/dev/null; then
     BUDDY_UID=$(id -u "$BUDDY_USER")
@@ -305,35 +339,42 @@ if [[ -f "$REPO_ROOT/sunshine/apps.json.template" ]]; then
     chown "$STREAM_USER:$STREAM_USER" "$APPS_JSON"
     log_info "Installed apps.json: $APPS_JSON"
     if ! grep -q "sudo -u $BUDDY_USER.*MoonDeckStream" "$APPS_JSON" 2>/dev/null; then
-        log_warn "MoonDeckStream app cmd may not run as $BUDDY_USER — check $APPS_JSON; exit 134 will persist if it runs as streamdeck"
+        log_warn "MoonDeckStream app cmd may not run as $BUDDY_USER — check $APPS_JSON; exit 134 will persist if it runs as $STREAM_USER"
     fi
 else
     log_warn "apps.json template not found, using default"
 fi
 
-# Install systemd units
+# Install systemd units (from templates)
 log_info "Installing systemd units..."
 
 # Stop existing services before updating (idempotent - won't fail if not running)
 systemctl stop streamdeck-sunshine.service 2>/dev/null || true
 systemctl stop streamdeck-xorg.service 2>/dev/null || true
 
-# Install xorg service
-XORG_UNIT="$REPO_ROOT/systemd/streamdeck-xorg.service"
-if [[ -f "$XORG_UNIT" ]]; then
-    cp "$XORG_UNIT" /etc/systemd/system/
+substitute_systemd() {
+    local src="$1"
+    local dest="$2"
+    sed -e "s|__STREAM_USER__|$STREAM_USER|g" \
+        -e "s|__STREAM_GROUP__|$STREAM_GROUP|g" \
+        -e "s|__STREAM_DISPLAY__|$STREAM_DISPLAY|g" \
+        -e "s|__STREAM_HOME__|$STREAM_HOME|g" \
+        "$src" > "$dest"
+}
+
+XORG_TPL="$REPO_ROOT/systemd/streamdeck-xorg.service.template"
+SUNSHINE_TPL="$REPO_ROOT/systemd/streamdeck-sunshine.service.template"
+if [[ -f "$XORG_TPL" ]]; then
+    substitute_systemd "$XORG_TPL" /etc/systemd/system/streamdeck-xorg.service
     log_info "Installed streamdeck-xorg.service"
 else
-    log_fatal "Xorg unit not found: $XORG_UNIT"
+    log_fatal "Xorg unit template not found: $XORG_TPL"
 fi
-
-# Install sunshine service
-SUNSHINE_UNIT="$REPO_ROOT/systemd/streamdeck-sunshine.service"
-if [[ -f "$SUNSHINE_UNIT" ]]; then
-    cp "$SUNSHINE_UNIT" /etc/systemd/system/
+if [[ -f "$SUNSHINE_TPL" ]]; then
+    substitute_systemd "$SUNSHINE_TPL" /etc/systemd/system/streamdeck-sunshine.service
     log_info "Installed streamdeck-sunshine.service"
 else
-    log_fatal "Sunshine unit not found: $SUNSHINE_UNIT"
+    log_fatal "Sunshine unit template not found: $SUNSHINE_TPL"
 fi
 
 # Reload systemd after installing all units

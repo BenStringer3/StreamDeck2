@@ -3,13 +3,12 @@
 
 set -euo pipefail
 
-# Source shared library
+# Source shared library and install config (STREAM_USER, BUDDY_USER, STREAM_DISPLAY)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
 source "$REPO_ROOT/scripts/lib.sh"
-
-# Configuration
-STREAM_DISPLAY="${STREAM_DISPLAY:-:99}"
+# shellcheck source=scripts/load-install-config.sh
+source "$REPO_ROOT/scripts/load-install-config.sh"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 # Store in repo so Cursor agents can grep logs for troubleshooting
 LOG_DIR="$REPO_ROOT/logs/streamdeck-$TIMESTAMP"
@@ -36,7 +35,7 @@ log_info "Collecting journalctl logs..."
 collect_journalctl streamdeck-xorg.service "$LOG_DIR/journalctl-xorg.log" 200
 collect_journalctl streamdeck-sunshine.service "$LOG_DIR/journalctl-sunshine.log" 200
 
-# Sunshine logs (sudo: /var/log/sunshine often owned by streamdeck)
+# Sunshine logs (sudo: /var/log/sunshine often owned by stream user)
 log_info "Collecting Sunshine logs..."
 SUNSHINE_LOG_DIR="/var/log/sunshine"
 if [[ -d "$SUNSHINE_LOG_DIR" ]]; then
@@ -47,7 +46,7 @@ fi
 
 # Xorg log
 log_info "Collecting Xorg log..."
-XORG_LOG="/var/log/streamdeck/Xorg.99.log"
+XORG_LOG="/var/log/$STREAM_USER/Xorg.99.log"
 if [[ -f "$XORG_LOG" ]]; then
     cp "$XORG_LOG" "$LOG_DIR/Xorg.99.log"
 else
@@ -63,7 +62,7 @@ else
     log_warn "Xorg config not found: $XORG_CONF"
 fi
 
-# Installed udev rules (input isolation: verify GROUP=streamdeck in place)
+# Installed udev rules (input isolation: verify GROUP matches stream user)
 log_info "Collecting installed udev rules (streamdeck/sunshine)..."
 for f in /etc/udev/rules.d/*streamdeck* /etc/udev/rules.d/*sunshine* /etc/udev/rules.d/61-streamdeck*; do
     [[ -f "$f" ]] || continue
@@ -106,10 +105,10 @@ log_info "Collecting version information..."
     cat /etc/os-release 2>/dev/null || true
 } > "$LOG_DIR/versions.txt"
 
-# Sunshine config and deployed apps (sudo: streamdeck's config dir is not world-readable)
+# Sunshine config and deployed apps (sudo: stream user's config dir is not world-readable)
 log_info "Collecting Sunshine config..."
-SUNSHINE_CONF="/home/streamdeck/.config/sunshine/sunshine.conf"
-SUNSHINE_CONFIG_DIR="/home/streamdeck/.config/sunshine"
+SUNSHINE_CONF="/home/$STREAM_USER/.config/sunshine/sunshine.conf"
+SUNSHINE_CONFIG_DIR="/home/$STREAM_USER/.config/sunshine"
 if sudo test -f "$SUNSHINE_CONF"; then
     sudo cp "$SUNSHINE_CONF" "$LOG_DIR/sunshine.conf"
 else
@@ -156,15 +155,14 @@ log_info "Collecting Sunshine capture/app diagnostics..."
 } > "$LOG_DIR/sunshine-diagnostics.txt" 2>&1
 
 # MoonDeck Buddy logs and config (host helper for MoonDeck plugin)
-BUDDY_USER="${BUDDY_USER:-__BUDDY_USER__}"
 log_info "Collecting MoonDeck Buddy logs..."
 for f in /tmp/moondeck*.log; do
     [[ -f "$f" ]] && cp "$f" "$LOG_DIR/$(basename "$f")" 2>/dev/null || true
 done
 [[ -f /tmp/moondeckstream-stderr.log ]] && cp /tmp/moondeckstream-stderr.log "$LOG_DIR/" 2>/dev/null || true
 if id "$BUDDY_USER" &>/dev/null; then
-    BEN_UID=$(id -u "$BUDDY_USER")
-    XDG_RUNTIME="/run/user/$BEN_UID"
+    BUDDY_UID=$(id -u "$BUDDY_USER")
+    XDG_RUNTIME="/run/user/$BUDDY_UID"
     sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="$XDG_RUNTIME" journalctl --user -u moondeckbuddy.service -n 300 --no-pager > "$LOG_DIR/journalctl-moondeckbuddy.log" 2>/dev/null || true
     sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="$XDG_RUNTIME" journalctl --user -u moondeckbuddy-gui-session.service -n 300 --no-pager > "$LOG_DIR/journalctl-moondeckbuddy-gui.log" 2>/dev/null || true
     BUDDY_SETTINGS="/home/$BUDDY_USER/.config/moondeckbuddy/settings.json"

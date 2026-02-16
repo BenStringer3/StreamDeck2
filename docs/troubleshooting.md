@@ -13,7 +13,7 @@ Common issues:
 1. **Xorg not starting**: Check NVIDIA driver and EDID configuration
 2. **Sunshine can't see display**: Verify `DISPLAY=:99` is set correctly
 3. **Encoder init fails**: Check NVENC availability with `nvidia-smi`
-4. **Buddy not running**: Start with `sudo -u __BUDDY_USER__ systemctl --user start moondeckbuddy.service`. If autostart was never set up: `sudo -u __BUDDY_USER__ MoonDeckBuddy --enable-autostart` then `sudo -u __BUDDY_USER__ systemctl --user enable --now moondeckbuddy.service`
+4. **Buddy not running**: Start with `sudo -u BUDDY_USER systemctl --user start moondeckbuddy.service` (replace BUDDY_USER with your desktop user, or set the env var). If autostart was never set up: `sudo -u BUDDY_USER MoonDeckBuddy --enable-autostart` then `sudo -u BUDDY_USER systemctl --user enable --now moondeckbuddy.service`. See [docs/installing.md](installing.md) for BUDDY_USER.
 5. **First pairing**: Pairing and general behaviour are described in the [MoonDeck plugin docs](https://github.com/FrogTheFrog/moondeck); the plugin explicitly requires Buddy installed on the host
 
 ## Moonlight connection issues
@@ -27,7 +27,7 @@ Common issues:
 
 **First check:** If the test summary **Post-connection port state** shows `UDP 47999: (none)` (and other Sunshine UDP as (none)), Sunshine never bound those ports because the **app (MoonDeckStream) exited** — fix the app exit (see "Desktop streams but MoonDeckStream fails" above); opening firewall will not help.
 
-Sunshine needs the following ports open on the **host** (Arch Linux). If UDP is blocked *and* Sunshine has bound the ports (you would see a PID for sunshine on UDP in port state), you get "Initial Ping Timeout" or Moonlight asks to check UDP firewall (e.g. 47999).
+Sunshine needs the following ports open on the **host**. If UDP is blocked *and* Sunshine has bound the ports (you would see a PID for sunshine on UDP in port state), you get "Initial Ping Timeout" or Moonlight asks to check UDP firewall (e.g. 47999).
 
 **Sunshine — open all of these:**
 
@@ -69,14 +69,14 @@ firewall-cmd --permanent --add-port=48010/tcp --add-port=59999/tcp
 firewall-cmd --reload
 ```
 
-## Why different errors: normal (__BUDDY_USER__ session) vs :99 (install.sh)
+## Why different errors: normal (desktop session) vs :99 (install.sh)
 
 If you run Sunshine + MoonDeck + Steam **normally** in your user session (physical monitors), you may see **"cannot initialize capture device"** when starting a stream. If you run the **install.sh** setup (Sunshine on :99, MoonDeckStream via sudo), you see **Error 11 / Initial Ping Timeout** instead. The difference is **where** the failure happens:
 
 | Setup | What happens | Error you see |
 |-------|----------------|---------------|
-| **Normal (__BUDDY_USER__, DISPLAY=:1)** | Sunshine starts the app (MoonDeckStream/game). The app **stays running**. Sunshine establishes the session and binds the UDP control channel, then tries to capture the display. Capture fails (e.g. access to display/encoder). | "Cannot initialize capture device" (or similar) — failure is at **capture**, not at session setup. |
-| **:99 (install.sh)** | Sunshine starts MoonDeckStream via `sudo -u __BUDDY_USER__` on DISPLAY=:99. MoonDeckStream **exits immediately** (e.g. code 15 or 256 — singleton, missing env, or other failure). Sunshine tears down the session; the UDP control channel is never established, so UDP 47999 etc. stay unbound. | **Error 11 / Initial Ping Timeout** — failure is **before** capture; the app died, so the session never fully establishes and Moonlight times out. Post-connection port state shows UDP (none). |
+| **Normal (desktop user, DISPLAY=:1)** | Sunshine starts the app (MoonDeckStream/game). The app **stays running**. Sunshine establishes the session and binds the UDP control channel, then tries to capture the display. Capture fails (e.g. access to display/encoder). | "Cannot initialize capture device" (or similar) — failure is at **capture**, not at session setup. |
+| **:99 (install.sh)** | Sunshine starts MoonDeckStream via `sudo -u BUDDY_USER` on DISPLAY=:99. MoonDeckStream **exits immediately** (e.g. code 15 or 256 — singleton, missing env, or other failure). Sunshine tears down the session; the UDP control channel is never established, so UDP 47999 etc. stay unbound. | **Error 11 / Initial Ping Timeout** — failure is **before** capture; the app died, so the session never fully establishes and Moonlight times out. Post-connection port state shows UDP (none). |
 
 So: **normal run logs** (with "cannot initialize capture device") show that when the app stays alive, the control channel is established and the failure is later (capture). **:99 logs** (App exited with code [256], UDP 47999 not bound) show that when the app exits right away, the session never establishes — hence Error 11. Fixing the :99 path means making MoonDeckStream stay running (env, singleton cleanup); fixing the normal path would mean fixing capture (out of scope per your note).
 
@@ -95,7 +95,7 @@ sequenceDiagram
 
     User->>Moonlight: Launch MoonDeckStream
     Moonlight->>Sunshine: Request stream (launch app)
-    Sunshine->>MDS: exec (sudo -u __BUDDY_USER__ …)
+    Sunshine->>MDS: exec (sudo -u BUDDY_USER …)
     MDS->>MDS: Exit (e.g. code 15 or 256)
     Sunshine->>Sunshine: Tear down session (app died)
     Note over Sunshine: UDP 47999 etc. never bound
@@ -109,7 +109,7 @@ sequenceDiagram
 1. **Check exit code:** Test summary **Stream session (MoonDeckStream)** shows "App exited with code [15]" or "[256]" (or similar).
 2. **Exit 15:** Sunshine may report this when the process is **killed by SIGTERM** (signal 15); a local repro can show exit **143** (128+15). Check `moondeckstream-stderr.log` first. If it shows **"Another instance of MoonDeckStream is already running!"**, the cause is the singleton: a stale instance or the wrapper’s pkill. Same fix as exit 256 "Another instance" below. If stderr is empty but repro gives 143, something is sending SIGTERM to MoonDeckStream (see [error11-troubleshooting-findings.md](error11-troubleshooting-findings.md)). **Interpreting repro exit code:** Run `sudo ./experiment.sh repro` and read `moondeckstream-exitcode.txt` and the "Decoded" line in `findings.txt`. If the code is **143**, the process was killed by SIGTERM — Sunshine's "code [15]" is the signal number. If the code is **15** or **256**, the process called `exit(15)` or `exit(256)` (singleton or other app path). The wrapper does not send SIGTERM to the process it exec's (same PID; wrapper is gone after exec). Fix the singleton (Theory 1+2) and re-test; if Error 11 goes away, exit 15 reporting is secondary (teardown/signal reporting).
 3. **Exit 256 (root cause):** MoonDeckStream's stream helper only stays running if it sees an env var whose *name* matches `SUNSHINE.*` or `APOLLO.*`. When Sunshine launches the app via `sudo -u <buddy_user> ...`, `sudo` does not pass Sunshine's own env, so the helper exits. **Fix:** The install app command passes `SUNSHINE_LAUNCHED=1` (and DISPLAY, XDG_RUNTIME_DIR, etc.) explicitly so the direct MoonDeckStream process sees them (see next).
-4. **Exit 256 or 15 "Another instance already running":** MoonDeckStream is a singleton (QSharedMemory + QSystemSemaphore). On SIGTERM it uses `quick_exit()` and does not run destructors; System V shm/sem segments **persist** after process exit. The install uses the **wrapper** at `/usr/local/bin/MoonDeckStream` (kills stale PIDs, attempts Qt IPC key-file cleanup, then exec's the real binary). Diagnostics showed the wrapper's key-file cleanup does not match MoonDeckStream's IPC on this host (see [moondeckstream-singleton-research.md](moondeckstream-singleton-research.md)); we confirmed the same failure with direct invocation (Option A), so the wrapper is not at fault — the root cause is orphaned IPC. If you still see "another instance", check `moondeckstream-stderr.log`, `ipcs.txt`, and the singleton research doc; run `scripts/experiment-singleton.sh` to gather key-file/IPC state. **Recovery (orphaned singleton IPC):** If key-file cleanup removed 0 files, the wrapper will also try to remove orphaned System V shared-memory segments (see below). You can recover manually: run `ipcs -m` as the Buddy user and find segments you own with **nattch** 0; remove with `ipcrm -m <shmid>`. If needed, `ipcs -s` then `ipcrm -s <semid>` for orphaned semaphores. Then retry launching MoonDeckStream; the next run should create a fresh segment and succeed. If the wrapper never logs "Removed orphaned shm segment", run `sudo ./scripts/experiment-singleton.sh` and inspect `logs/singleton-<timestamp>/phase3-ipcs.txt` for __BUDDY_USER__-owned shm with nattch 0 after the run; then `ipcrm -m <shmid>` those and retry.
+4. **Exit 256 or 15 "Another instance already running":** MoonDeckStream is a singleton (QSharedMemory + QSystemSemaphore). On SIGTERM it uses `quick_exit()` and does not run destructors; System V shm/sem segments **persist** after process exit. The install uses the **wrapper** at `/usr/local/bin/MoonDeckStream` (kills stale PIDs, attempts Qt IPC key-file cleanup, then exec's the real binary). Diagnostics showed the wrapper's key-file cleanup does not match MoonDeckStream's IPC on this host (see [moondeckstream-singleton-research.md](moondeckstream-singleton-research.md)); we confirmed the same failure with direct invocation (Option A), so the wrapper is not at fault — the root cause is orphaned IPC. If you still see "another instance", check `moondeckstream-stderr.log`, `ipcs.txt`, and the singleton research doc; run `scripts/experiment-singleton.sh` to gather key-file/IPC state. **Recovery (orphaned singleton IPC):** If key-file cleanup removed 0 files, the wrapper will also try to remove orphaned System V shared-memory segments (see below). You can recover manually: run `ipcs -m` as the Buddy user and find segments you own with **nattch** 0; remove with `ipcrm -m <shmid>`. If needed, `ipcs -s` then `ipcrm -s <semid>` for orphaned semaphores. Then retry launching MoonDeckStream; the next run should create a fresh segment and succeed. If the wrapper never logs "Removed orphaned shm segment", run `sudo ./scripts/experiment-singleton.sh` and inspect `logs/singleton-<timestamp>/phase3-ipcs.txt` for Buddy-user-owned shm with nattch 0 after the run; then `ipcrm -m <shmid>` those and retry.
 
 **Orphaned singleton IPC (validation):** (a) After a run that exits with "Another instance already running", System V shm/sem segments created by the previous (SIGTERM’d) process persist because `quick_exit()` does not run destructors. (b) In a log bundle, `ipcs.txt` shows `ipcs -m` and `ipcs -s`; identify segments owned by the Buddy user (column 3). For shm, **nattch** 0 means no process is attached — the segment is orphaned; note **shmid** (column 2) and, if needed, **semid** from `ipcs -s`. (c) Removing them with `ipcrm -m <shmid>` (and `ipcrm -s <semid>` if needed) and retrying fixes the next launch; the wrapper also attempts this when key-file cleanup removed 0 files.
 
@@ -122,7 +122,7 @@ sequenceDiagram
 
 If the stream starts and then closes immediately with **exit 134** (SIGABRT):
 
-1. **Root cause (exit 134):** MoonDeckStream uses Qt shared memory/semaphore to talk to MoonDeck Buddy. If MoonDeckStream runs as user `streamdeck` while Buddy runs as your desktop user (e.g. `__BUDDY_USER__`), the process gets "permission denied" on the semaphore and aborts. **Fix:** Sunshine must launch MoonDeckStream as the same user as Buddy. The install uses the wrapper at `/usr/local/bin/MoonDeckStream`; re-run `install.sh` and ensure `/etc/sudoers.d/streamdeck-steam` includes `NOPASSWD: /usr/local/bin/MoonDeckStream` for your Buddy user.
+1. **Root cause (exit 134):** MoonDeckStream uses Qt shared memory/semaphore to talk to MoonDeck Buddy. If MoonDeckStream runs as the stream user while Buddy runs as your desktop user (BUDDY_USER), the process gets "permission denied" on the semaphore and aborts. **Fix:** Sunshine must launch MoonDeckStream as the same user as Buddy. The install uses the wrapper at `/usr/local/bin/MoonDeckStream`; re-run `install.sh` and ensure `/etc/sudoers.d/streamdeck-steam` includes `NOPASSWD: /usr/local/bin/MoonDeckStream` for your Buddy user (see [installing.md](installing.md)).
 2. **Reproducing:** Run `sudo ./experiment.sh` and check `logs/experiment-<timestamp>/findings.txt` for the abort reason.
 3. **Known behaviour:** With `wait-all: false`, when MoonDeckStream exits, Sunshine ends the stream.
 

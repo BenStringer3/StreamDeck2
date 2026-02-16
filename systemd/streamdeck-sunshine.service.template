@@ -6,19 +6,19 @@ Requires=streamdeck-xorg.service
 
 [Service]
 Type=simple
-User=streamdeck
-Group=streamdeck
+User=__STREAM_USER__
+Group=__STREAM_GROUP__
 # Bind Sunshine to the streaming X display
-Environment="DISPLAY=:99"
+Environment="DISPLAY=__STREAM_DISPLAY__"
 # Sunshine config directory
-Environment="SUNSHINE_CONFIG_DIR=/home/streamdeck/.config/sunshine"
+Environment="SUNSHINE_CONFIG_DIR=__STREAM_HOME__/.config/sunshine"
 # Sunshine log directory
 Environment="SUNSHINE_LOG_DIR=/var/log/sunshine"
 # PRIME offload: use NVIDIA GPU for rendering/encoding even with dummy X driver
 Environment="__NV_PRIME_RENDER_OFFLOAD=1"
 Environment="__GLX_VENDOR_LIBRARY_NAME=nvidia"
 Environment="__VK_LAYER_NV_optimus=NVIDIA_only"
-WorkingDirectory=/home/streamdeck
+WorkingDirectory=__STREAM_HOME__
 ExecStart=/usr/bin/sunshine
 Restart=on-failure
 RestartSec=5
