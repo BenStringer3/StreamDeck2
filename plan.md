@@ -32,7 +32,7 @@ This repo is **not** a general Wayland compositor experiment. It is an operation
 
 ## 2) Environment facts (as provided)
 
-- OS: Arch-based **__HOSTNAME__** (Wayland desktop in daily use).
+- OS: Arch-based Linux distro (Wayland desktop in daily use).
 - Daily compositor: **Hyprland** (user preference).
 - GPU: **NVIDIA GeForce RTX 3090 Ti**.
 - User already has an **EDID override on DP-3** at **Steam Deck resolution** (1280x800).
