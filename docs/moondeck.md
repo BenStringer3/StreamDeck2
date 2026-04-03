@@ -22,6 +22,18 @@ Reference notes for the MoonDeck-first workflow. Sources: [MoonDeck Buddy Wiki](
 - **First run:** You may need a reboot, or start the units manually: `systemctl --user start moondeckbuddy && systemctl --user start moondeckbuddy-gui-session`. Install scripts should use `enable --now` so services start without a reboot when possible.
 - Autostart can be toggled from the tray (right-click → autostart). For automation, prefer installing/enabling the user units explicitly rather than relying on the tray.
 
+## Game lifecycle / quitting
+
+MoonDeck's intended quit flow is:
+
+1. **Quit the game from within the game** (in-game menu → Exit / Quit).
+2. Steam marks the app as stopped; Buddy detects `AppState.Stopped`.
+3. MoonDeck on the Deck detects the stopped state and ends the stream automatically.
+
+If you **end the stream from the Deck side** (Steam button → close stream / Moonlight disconnect) *without* first quitting the game, the stream session closes but the game process on the PC keeps running. This is **intentional by design** ([FrogTheFrog/moondeck#62](https://github.com/FrogTheFrog/moondeck/issues/62)): MoonDeck does not force-close games when the stream ends because an unexpected connection drop would also kill the game and lose unsaved progress.
+
+**Intended workflow:** quit the game from its own in-game menu first; the stream will then end itself cleanly.
+
 ## Logs and config
 
 - **Buddy logs:** Under `/tmp`, prefixed `moondeck...` (e.g. `/tmp/moondeckbuddy.log`). ([Buddy wiki](https://github.com/FrogTheFrog/moondeck-buddy/wiki) — logs live in `/tmp`.)
