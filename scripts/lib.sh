@@ -116,6 +116,21 @@ check_sunshine_logs() {
     return 1
 }
 
+check_audio_tcp() {
+    # Verify that STREAM_USER can connect to Buddy's PipeWire-Pulse TCP listener.
+    # Requires: STREAM_USER set, pactl available.
+    local stream_user="${STREAM_USER:-streamdeck}"
+    if ! command -v pactl &>/dev/null; then
+        log_warn "pactl not found; cannot verify audio connectivity"
+        return 1
+    fi
+    if sudo -u "$stream_user" PULSE_SERVER=tcp:127.0.0.1:4713 pactl info &>/dev/null; then
+        return 0
+    fi
+    log_error "Audio: $stream_user cannot connect to PipeWire-Pulse at tcp:127.0.0.1:4713 (see docs/audio-pipeline.md)"
+    return 1
+}
+
 # System state collection
 collect_systemctl_status() {
     local unit="$1"

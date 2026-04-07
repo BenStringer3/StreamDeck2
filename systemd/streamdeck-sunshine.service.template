@@ -18,6 +18,10 @@ Environment="SUNSHINE_LOG_DIR=/var/log/sunshine"
 Environment="__NV_PRIME_RENDER_OFFLOAD=1"
 Environment="__GLX_VENDOR_LIBRARY_NAME=nvidia"
 Environment="__VK_LAYER_NV_optimus=NVIDIA_only"
+# Audio: connect to BUDDY_USER's PipeWire-Pulse TCP listener on localhost.
+# install.sh deploys a pipewire-pulse drop-in for BUDDY_USER that enables tcp:127.0.0.1:4713.
+# This avoids filesystem ACLs on /run/user/<uid>/pulse/native (fragile across reboots).
+Environment="PULSE_SERVER=tcp:127.0.0.1:4713"
 WorkingDirectory=__STREAM_HOME__
 ExecStart=/usr/bin/sunshine
 Restart=on-failure

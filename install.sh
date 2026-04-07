@@ -233,6 +233,19 @@ OVEREOF
             log_info "Added TMPDIR=/tmp to moondeckbuddy.service override"
         fi
     fi
+    # PipeWire-Pulse TCP: enable localhost listener so Sunshine (STREAM_USER) can capture audio.
+    # Sunshine's unit sets PULSE_SERVER=tcp:127.0.0.1:4713; this drop-in makes pipewire-pulse listen there.
+    # See docs/audio-pipeline.md.
+    PIPEWIRE_PULSE_DROPIN="/home/$BUDDY_USER/.config/pipewire/pipewire-pulse.conf.d"
+    mkdir -p "$PIPEWIRE_PULSE_DROPIN"
+    cp "$REPO_ROOT/pipewire/10-tcp-localhost.conf" "$PIPEWIRE_PULSE_DROPIN/10-tcp-localhost.conf"
+    chown -R "$BUDDY_USER:$BUDDY_USER" "/home/$BUDDY_USER/.config/pipewire"
+    log_info "Installed PipeWire-Pulse TCP drop-in for $BUDDY_USER (tcp:127.0.0.1:4713)"
+    # Restart pipewire-pulse so the TCP listener takes effect immediately
+    sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$BUDDY_USER")" systemctl --user restart pipewire-pulse.service 2>/dev/null \
+        && log_info "Restarted pipewire-pulse.service for $BUDDY_USER" \
+        || log_warn "Could not restart pipewire-pulse.service (user may need to log out/in)"
+
     # Reload so override (e.g. TMPDIR=/tmp) is applied; restart so running Buddy picks up new env
     sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$BUDDY_USER")" systemctl --user daemon-reload 2>/dev/null || true
     sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$BUDDY_USER")" systemctl --user enable moondeckbuddy.service 2>/dev/null || log_warn "Could not enable moondeckbuddy.service"
@@ -462,6 +475,14 @@ if check_sunshine_logs; then
     log_info "✓ Sunshine logs show successful startup"
 else
     log_error "✗ Sunshine logs not found or show errors"
+    HEALTH_FAILED=1
+fi
+
+# Audio connectivity check (Sunshine → Buddy's PipeWire-Pulse via TCP)
+if check_audio_tcp; then
+    log_info "✓ Audio: $STREAM_USER can reach PipeWire-Pulse at tcp:127.0.0.1:4713"
+else
+    log_error "✗ Audio: $STREAM_USER cannot reach PipeWire-Pulse (stream will have no audio)"
     HEALTH_FAILED=1
 fi
 

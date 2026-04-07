@@ -17,6 +17,16 @@ Common issues:
 4. **Buddy not running**: Start with `sudo -u BUDDY_USER systemctl --user start moondeckbuddy.service` (replace BUDDY_USER with your desktop user, or set the env var). If autostart was never set up: `sudo -u BUDDY_USER MoonDeckBuddy --enable-autostart` then `sudo -u BUDDY_USER systemctl --user enable --now moondeckbuddy.service`. See [docs/installing.md](installing.md) for BUDDY_USER.
 5. **First pairing**: Pairing and general behaviour are described in the [MoonDeck plugin docs](https://github.com/FrogTheFrog/moondeck); the plugin explicitly requires Buddy installed on the host
 
+## No audio on stream (Moonlight silent)
+
+See [audio-pipeline.md](audio-pipeline.md) for the full architecture. Quick checklist:
+
+1. **TCP bridge health check:** `sudo -u streamdeck PULSE_SERVER=tcp:127.0.0.1:4713 pactl info`. If this fails, `pipewire-pulse` is not listening on TCP. Check that `~/.config/pipewire/pipewire-pulse.conf.d/10-tcp-localhost.conf` exists for BUDDY_USER and restart: `systemctl --user restart pipewire-pulse.service`. Re-run `sudo ./install.sh` to deploy the drop-in.
+2. **Sunshine log says "Couldn't set default-sink: Access denied" / "Unable to initialize audio capture"**: The TCP drop-in uses `client.access = "restricted"` instead of `"unrestricted"`. Sunshine needs full graph access (load sink modules, set-default-sink) at stream start. Re-run `sudo ./install.sh` to deploy the updated drop-in (sets `client.access = "unrestricted"`), then `systemctl --user restart pipewire-pulse.service` as BUDDY_USER. Validate: `sudo ./scripts/experiment-audio.sh` (step 7 tests set-default-sink).
+3. **Sunshine log says "Couldn't connect to pulseaudio: Access denied"**: The Sunshine service does not have `PULSE_SERVER=tcp:127.0.0.1:4713`, or step 1 fails. Re-run `sudo ./install.sh` (deploys the updated service unit and PipeWire drop-in).
+4. **Sunshine connects but wrong sink**: `audio_sink` in `sunshine.conf` does not match where games send audio. Run `pactl list short sinks` and set `audio_sink` explicitly.
+5. **`StreamDeck-Bridge` does not exist**: Only the "Steam Big Picture" app uses `PULSE_SINK=StreamDeck-Bridge`; if the sink is missing, Steam audio may fail or go elsewhere. Create the sink or remove `PULSE_SINK` from the app command.
+
 ## Moonlight connection issues
 
 - Ensure Sunshine is running: `systemctl status streamdeck-sunshine`

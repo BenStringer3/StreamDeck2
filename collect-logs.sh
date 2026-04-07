@@ -152,6 +152,15 @@ log_info "Collecting Sunshine capture/app diagnostics..."
     ( for f in "$LOG_DIR"/sunshine-logs/*.log; do [[ -f "$f" ]] && cat "$f"; done
       journalctl -u streamdeck-sunshine.service -n 300 --no-pager 2>/dev/null
     ) | grep -iE 'audio|pulse|pipewire|Unable to initialize audio' || echo "(no matches)"
+    echo ""
+    echo "=== Audio TCP bridge (tcp:127.0.0.1:4713) ==="
+    echo "--- port 4713 listener ---"
+    ss -tlnp 2>/dev/null | grep ':4713' || echo "(not listening)"
+    echo "--- pactl info as $STREAM_USER via TCP ---"
+    sudo -u "$STREAM_USER" PULSE_SERVER=tcp:127.0.0.1:4713 pactl info 2>&1 || echo "(connection failed)"
+    echo "--- PipeWire-Pulse drop-in ---"
+    DROPIN="/home/$BUDDY_USER/.config/pipewire/pipewire-pulse.conf.d/10-tcp-localhost.conf"
+    if [[ -f "$DROPIN" ]]; then echo "exists: $DROPIN"; else echo "MISSING: $DROPIN"; fi
 } > "$LOG_DIR/sunshine-diagnostics.txt" 2>&1
 
 # MoonDeck Buddy logs and config (host helper for MoonDeck plugin)
