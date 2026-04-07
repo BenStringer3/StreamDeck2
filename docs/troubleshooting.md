@@ -7,6 +7,7 @@ Logs are collected automatically (install and test-full-cycle both run `collect-
 - Sunshine and Xorg logs
 - **MoonDeck Buddy:** `/tmp/moondeck*.log`, user journal for `moondeckbuddy.service` / `moondeckbuddy-gui-session.service`, and `~/.config/moondeckbuddy/settings.json`
 - A grep summary for Buddy/MoonDeck (errors, port, listen, pair, etc.)
+- **`steam-game-launch.txt`** — Buddy `steam://` / AppID watch lines plus Steam log greps (`gameprocess_log`, `console-linux`, `webhelper`) to see whether a game ever entered Steam’s running list after Buddy sent `steam://launch/…/dialog`
 
 Common issues:
 
@@ -181,6 +182,7 @@ Steam Big Picture appears on the stream (pre-launch worked), but after several s
 1. **Game slow to start** — First launch, shader compile, or heavy title can take 30+ seconds; the stream was closed before the window appeared. Try waiting 60–90 s after selecting the game before concluding it didn’t launch.
 2. **Game failed to start** — Crash or missing Vulkan/display; check Steam logs: `~/.local/share/Steam/logs/gameprocess_log.txt`, `content_log.txt`, and `webhelper.txt` (and .previous) for the run.
 3. **Game on physical monitor** — If the game window opens on the host monitor instead of the stream, you still see “no game” on the Deck. That would mean the game process inherited the desktop display (see “Steam/game on physical monitor” above; a steam wrapper with `DISPLAY=:99` when streaming may be needed).
+4. **Launch URI uses `/dialog`** — MoonDeck Buddy often runs `steam://launch/<AppID>/dialog`. That can open a **Steam launch or compatibility dialog** (Proton, cloud sync, first run). On a minimal X11 session (`:99`), the dialog may be behind Big Picture, off-screen, or only obvious on a physical monitor; until it is dismissed, the game may not enter Steam’s “running” state and MoonDeck can time out. Confirm with `steam-logs/` in the collected bundle (after `collect-logs.sh`) and by checking the host display during repro.
 
 **What to do:**
 

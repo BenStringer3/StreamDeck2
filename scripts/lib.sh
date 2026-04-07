@@ -91,18 +91,24 @@ check_sunshine_service() {
 }
 
 check_sunshine_logs() {
-    # Check journalctl for successful Sunshine startup with encoder detection
+    # Journal: need enough lines that startup (or per-session encoder probe) is not pushed out by
+    # interleaved Steam/sudo lines during MoonDeckStream — n=100 caused false FAIL while NVENC passed (n=200).
+    local log_dir="${SUNSHINE_LOG_DIR:-/var/log/sunshine}"
+    local journal_lines=400
+    local js
+    js="$(journalctl -u streamdeck-sunshine.service --no-pager -n "$journal_lines" 2>/dev/null || true)"
     # Note: Use grep -E ... >/dev/null instead of grep -qE to avoid SIGPIPE issues in pipelines
-    if journalctl -u streamdeck-sunshine.service --no-pager -n 100 2>/dev/null | grep -E "Found H.264 encoder|Found HEVC encoder" >/dev/null; then
-        # Check for port conflicts which would prevent operation
-        if journalctl -u streamdeck-sunshine.service --no-pager -n 50 2>/dev/null | grep -E "Address already in use" >/dev/null; then
+    if echo "$js" | grep -E "Found H\.264 encoder|Found HEVC encoder" >/dev/null; then
+        if echo "$js" | grep -E "Address already in use" >/dev/null; then
             log_error "Sunshine has port conflict - another instance may be running"
             return 1
         fi
         return 0
     fi
-    # Fallback: check log files
-    local log_dir="${SUNSHINE_LOG_DIR:-/var/log/sunshine}"
+    # Fallback: on-disk log (readable if test runs as user with access, or install.sh as root)
+    if [[ -r "$log_dir/sunshine.log" ]] && grep -E "Found H\.264 encoder|Found HEVC encoder" "$log_dir/sunshine.log" >/dev/null 2>&1; then
+        return 0
+    fi
     if [[ -f "$log_dir/sunshine.log" ]] && grep -E "Sunshine version" "$log_dir/sunshine.log" >/dev/null 2>&1; then
         return 0
     fi

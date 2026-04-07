@@ -180,6 +180,55 @@ fi
     ) | grep -iE 'error|warn|fail|port|listen|pair|moonlight|sunshine|stream' || echo "(no matches)"
 } > "$LOG_DIR/moondeck-diagnostics.txt" 2>&1
 
+# Steam client logs (Buddy user) — game launch / MoonDeck "watching AppID" diagnosis (see docs/troubleshooting.md, check-input-pipeline.sh)
+log_info "Collecting Steam client logs..."
+mkdir -p "$LOG_DIR/steam-logs"
+STEAM_CLIENT_LOGS="/home/$BUDDY_USER/.local/share/Steam/logs"
+if id "$BUDDY_USER" &>/dev/null && sudo test -d "$STEAM_CLIENT_LOGS"; then
+    for f in gameprocess_log.txt content_log.txt webhelper.txt stderr.txt console-linux.txt shader_log.txt; do
+        if sudo test -f "$STEAM_CLIENT_LOGS/$f"; then
+            sudo cp "$STEAM_CLIENT_LOGS/$f" "$LOG_DIR/steam-logs/$f" 2>/dev/null || true
+        fi
+    done
+    sudo chown -R "$RUN_AS_UID:$RUN_AS_GID" "$LOG_DIR/steam-logs" 2>/dev/null || true
+    # Buddy launch URI vs Steam "game running" — docs/troubleshooting.md, moondeck-game-detection-research.md
+    log_info "Collecting Steam game-launch diagnostic summary..."
+    {
+        echo "=== 1. Buddy: steam:// commands, AppID watch, stream boundaries ==="
+        if [[ -f "$LOG_DIR/moondeckbuddy.log" ]]; then
+            grep -E 'steam://|Started watching AppID|Stopped watching AppID|BigPicture|Stream started\.|Stream is ending|Stream has ended|WITH ENV OVERRIDES.*steam' "$LOG_DIR/moondeckbuddy.log" 2>/dev/null | tail -120 || true
+        else
+            echo "(moondeckbuddy.log not in bundle)"
+        fi
+        echo ""
+        echo "=== 2. gameprocess_log.txt: running list / gameID ==="
+        if [[ -f "$LOG_DIR/steam-logs/gameprocess_log.txt" ]]; then
+            grep -E 'running list|gameID|AppID|Updating|Failed|ERROR' "$LOG_DIR/steam-logs/gameprocess_log.txt" 2>/dev/null | tail -80 || true
+        else
+            echo "(gameprocess_log.txt missing)"
+        fi
+        echo ""
+        echo "=== 3. console-linux.txt: Adding process / rungameid / launch ==="
+        if [[ -f "$LOG_DIR/steam-logs/console-linux.txt" ]]; then
+            grep -iE 'Adding process.*gameID|rungameid|steam://launch|steam://open|Game Recording.*game' "$LOG_DIR/steam-logs/console-linux.txt" 2>/dev/null | tail -100 || true
+        else
+            echo "(console-linux.txt missing)"
+        fi
+        echo ""
+        echo "=== 4. webhelper.txt: BPM / GL / compositor (game UI may fail here) ==="
+        if [[ -f "$LOG_DIR/steam-logs/webhelper.txt" ]]; then
+            grep -iE 'CreateOutputWindow|gl context|steamclient\.so|dlmopen|Failed to create|composer|Assertion Failed' "$LOG_DIR/steam-logs/webhelper.txt" 2>/dev/null | tail -80 || true
+        else
+            echo "(webhelper.txt missing)"
+        fi
+        echo ""
+        echo "=== 5. Heuristic (read with latest session in mind) ==="
+        echo "If section 1 shows 'Started watching AppID: N' for a run but section 2–3 show no 'Add … to running list' / 'Adding process … gameID N' after that launch, Steam never registered the game — often a stuck steam://launch/…/dialog, wrong display, or GPU/CEF failure (section 4)."
+    } > "$LOG_DIR/steam-game-launch.txt" 2>&1 || true
+else
+    log_warn "Steam logs directory missing or buddy user unknown: $STEAM_CLIENT_LOGS"
+fi
+
 # Systemd unit files
 log_info "Collecting systemd unit files..."
 if [[ -f /etc/systemd/system/streamdeck-xorg.service ]]; then
