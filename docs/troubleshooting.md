@@ -127,25 +127,30 @@ Steam (and the game) start correctly, but they appear on your **physical monitor
 
 Steam Big Picture appears on the stream, but the game does not start and the stream eventually closes.
 
-**Root cause (three layers):**
+**Root cause (three layers, any one blocks the launch):**
 
-1. **GLX vendor mismatch** (primary). The Sunshine service sets `__GLX_VENDOR_LIBRARY_NAME=nvidia` (for NVENC). Buddy captures this and passes it to Steam. But Xorg `:99` (dummy driver) only provides `DRISWRAST` (Mesa software GLX). NVIDIA's client-side GLX can't negotiate with Mesa's server-side GLX, so Steam's CEF compositor fails: `CreateOutputWindow: failed to acquire a gl context`. In degraded mode, CEF silently drops all game launch commands.
+1. **GLX vendor mismatch.** The Sunshine service sets `__GLX_VENDOR_LIBRARY_NAME=nvidia` (for NVENC). Buddy captures this and passes it to Steam. But Xorg `:99` (dummy driver) only provides `DRISWRAST` (Mesa software GLX). NVIDIA's client-side GLX can't negotiate with Mesa's server-side GLX, so Steam's CEF compositor fails: `CreateOutputWindow: failed to acquire a gl context`. In degraded mode, CEF silently drops all game launch commands.
 
-2. **`steam://launch/<AppID>/dialog` blocks.** Buddy sends this URI which renders a launch config dialog. On the headless display nobody can dismiss it.
+2. **Launch-options dialog blocks.** Buddy sends `steam://launch/<AppID>/dialog`. For games with multiple launch configs (e.g. Satisfactory: with/without EAC), both `/dialog` and `rungameid` show a config selection dialog. On the dummy display, CEF can't render this dialog (`X_PutImage BadMatch`), so the launch blocks silently. Games without multiple configs (e.g. Horizon Forbidden West) are unaffected and launch normally.
 
-3. **Steam's singleton IPC is unreliable on `:99`.** A pre-launched Steam instance in degraded-CEF mode silently ignores IPC messages.
+3. **Shader cache dialog blocks.** Games with a pending Vulkan shader pre-cache download trigger a "Processing Vulkan Shaders" progress dialog during the launch pipeline (`GameAction … ProcessingShaderCache waiting for user response`). On the headless display CEF can't render this dialog, so the launch hangs indefinitely. This affects any game whose shader cache was not fully downloaded — check `~/.local/share/Steam/logs/content_log.txt` for `update started : download 0/<N>` with a non-zero N and `result Suspended`.
 
 **Fix:** Re-run `sudo ./install.sh`. The `steam-headless` wrapper (`/usr/local/bin/steam-headless`):
 
 - **Unsets `__GLX_VENDOR_LIBRARY_NAME` and `__NV_PRIME_RENDER_OFFLOAD`** so Mesa's GLX matches the swrast server. Games use Vulkan (Proton/DXVK), not GLX.
-- **Rewrites `steam://launch/<AppID>/dialog` → `steam://rungameid/<AppID>`** to bypass the blocking dialog.
+- **Rewrites `steam://launch/<AppID>/dialog` → `steam://launch/<AppID>/0`** to select the first (default) launch config directly, bypassing both the dialog and CEF rendering requirements.
+- **Passes `-noshaders`** to disable Steam's shader manager, preventing the `ProcessingShaderCache` step from blocking on an unrenderable progress dialog. Games still compile shaders at runtime via DXVK's pipeline cache — only the pre-compiled download cache is skipped, which may cause minor first-run stuttering.
 
 The install also sets Buddy's `steam_exec_override` to `/usr/local/bin/steam-headless`, expands `env_capture_regex`, and removes the MoonDeckStream wrapper's Steam pre-launch. After install, restart Buddy: `systemctl --user restart moondeckbuddy.service`.
 
+**Note:** The `/0` config always selects the first launch option. If a user prefers a non-default config (e.g. "Launch without Anti-Cheat"), they must set it as the default in Steam or configure the AppID-specific config number.
+
 **Diagnostic steps:**
 
-1. Check **steam-game-launch.txt** sections 1-5 in the log bundle. If section 1 shows `Started watching AppID` but sections 2-3 show no `Adding process`, and section 4 shows "failed to acquire a gl context", the GLX mismatch is active.
-2. Check Steam logs: `~/.local/share/Steam/logs/gameprocess_log.txt`, `webhelper.txt`.
+1. Check **steam-game-launch.txt** sections 1-6 in the log bundle. If section 1 shows `Started watching AppID` but sections 2-3 show no `Adding process`, the game never launched.
+2. Check **section 5** (`console_log.txt` GameAction steps) for the last `LaunchApp changed task to` line. If it ends at `ProcessingShaderCache waiting for user response`, the shader cache dialog blocked the launch.
+3. Check `webhelper.txt` for `BadMatch` / `X_PutImage` errors — indicates CEF can't render on the dummy driver.
+4. Check `content_log.txt` for `AppID <N> update started` with incomplete download — a suspended shader cache download triggers the blocking dialog.
 
 **MoonDeck "Failed to launch app in time!":** This message is from the **MoonDeck plugin** (Steam Deck), not Moonlight. MoonDeck polls Buddy for the game's app state; if the game never enters Steam's "running" list, MoonDeck hits its launch timeout and ends the stream. Root cause: the game never started on the host (see above).
 

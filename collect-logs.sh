@@ -194,7 +194,7 @@ log_info "Collecting Steam client logs..."
 mkdir -p "$LOG_DIR/steam-logs"
 STEAM_CLIENT_LOGS="/home/$BUDDY_USER/.local/share/Steam/logs"
 if id "$BUDDY_USER" &>/dev/null && sudo test -d "$STEAM_CLIENT_LOGS"; then
-    for f in gameprocess_log.txt content_log.txt webhelper.txt stderr.txt console-linux.txt shader_log.txt; do
+    for f in gameprocess_log.txt content_log.txt webhelper.txt stderr.txt console-linux.txt console_log.txt shader_log.txt; do
         if sudo test -f "$STEAM_CLIENT_LOGS/$f"; then
             sudo cp "$STEAM_CLIENT_LOGS/$f" "$LOG_DIR/steam-logs/$f" 2>/dev/null || true
         fi
@@ -231,8 +231,15 @@ if id "$BUDDY_USER" &>/dev/null && sudo test -d "$STEAM_CLIENT_LOGS"; then
             echo "(webhelper.txt missing)"
         fi
         echo ""
-        echo "=== 5. Heuristic (read with latest session in mind) ==="
-        echo "If section 1 shows 'Started watching AppID: N' for a run but section 2–3 show no 'Add … to running list' / 'Adding process … gameID N' after that launch, Steam never registered the game — often a stuck steam://launch/…/dialog, wrong display, or GPU/CEF failure (section 4)."
+        echo "=== 5. console_log.txt: GameAction launch pipeline (shader cache, interstitials) ==="
+        if [[ -f "$LOG_DIR/steam-logs/console_log.txt" ]]; then
+            grep -iE 'GameAction.*LaunchApp|ExecCommandLine|ExecuteSteamURL' "$LOG_DIR/steam-logs/console_log.txt" 2>/dev/null | tail -80 || true
+        else
+            echo "(console_log.txt missing)"
+        fi
+        echo ""
+        echo "=== 6. Heuristic (read with latest session in mind) ==="
+        echo "If section 1 shows 'Started watching AppID: N' for a run but section 2–3 show no 'Add … to running list' / 'Adding process … gameID N' after that launch, Steam never registered the game — often a stuck steam://launch/…/dialog, shader cache dialog (section 5 'ProcessingShaderCache waiting'), wrong display, or GPU/CEF failure (section 4)."
     } > "$LOG_DIR/steam-game-launch.txt" 2>&1 || true
 else
     log_warn "Steam logs directory missing or buddy user unknown: $STEAM_CLIENT_LOGS"

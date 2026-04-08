@@ -246,8 +246,8 @@ OVEREOF
         && log_info "Restarted pipewire-pulse.service for $BUDDY_USER" \
         || log_warn "Could not restart pipewire-pulse.service (user may need to log out/in)"
 
-    # Install steam-headless wrapper: rewrites steam://launch/<AppID>/dialog → steam://rungameid/<AppID>
-    # so game launches aren't blocked by an unrenderable dialog on the headless :99 display.
+    # Install steam-headless wrapper: fixes three headless-display issues that block game launches:
+    # (1) GLX vendor mismatch, (2) launch-options dialog, (3) shader cache dialog.
     STEAM_HEADLESS_SRC="$REPO_ROOT/scripts/steam-headless-wrapper.sh"
     STEAM_HEADLESS_DEST="/usr/local/bin/steam-headless"
     if [[ -f "$STEAM_HEADLESS_SRC" ]]; then
