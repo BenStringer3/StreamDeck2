@@ -215,7 +215,7 @@ SUMMARY_FILE="$LOG_DIR/summary.txt"
     if [[ -f "$SUNSHINE_LOG" ]]; then
         if grep -q "App exited with code \[134\]" "$SUNSHINE_LOG" 2>/dev/null; then
             echo "⚠ App exited with code [134] (SIGABRT) — stream ended immediately after connect."
-            echo "  Root cause: run sudo ./experiment.sh to capture stderr (e.g. Qt shared memory permission denied if MoonDeckStream runs as streamdeck instead of Buddy user)."
+            echo "  Root cause: see docs/troubleshooting.md; collect stderr in sunshine-logs/moondeckstream.log and /tmp/moondeckstream-stderr.log (ENV regex / TMPDIR / Qt shared memory)."
         fi
         if grep -q "App exited with code \[256\]" "$SUNSHINE_LOG" 2>/dev/null; then
             echo "⚠ App exited with code [256] — MoonDeckStream exited shortly after launch (check MoonDeckStream/Buddy compatibility and env)."

@@ -58,7 +58,7 @@ When building the timeline (section 4), **only include lines with timestamps in 
 - Do **not** assume system state. Use **targeted experiment scripts** to validate hypotheses:
   - Create or modify `scripts/experiment-*.sh` scripts for the current hypothesis (setup / run / teardown), document hypothesis and findings in the script, run with `sudo ./scripts/experiment-<name>.sh` when needed.
   - Remove or archive experiment scripts once the hypothesis is confirmed or discarded.
-- Recommend **concrete next steps** (e.g. "Run `sudo ./experiment.sh` with step X to confirm that UDP binds only after a client connects" or "Add to collect-logs.sh: copy `/run/user/<uid>/qipc_*` listing for streamdeck and Buddy user").
+- Recommend **concrete next steps** (e.g. "Run `sudo ./scripts/experiment-<name>.sh` to confirm that UDP binds only after a client connects" or "Add to collect-logs.sh: copy `/run/user/<uid>/qipc_*` listing for streamdeck and Buddy user").
 
 ## 8. Keep diagnostics in sync
 

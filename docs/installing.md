@@ -71,6 +71,6 @@ nvidia-smi -q | grep "Bus Id"
 lspci | grep -i nvidia
 ```
 
-Format is `BBBB:DD:F` (Bus:Device.Function in hex). Edit `/home/<STREAM_USER>/.config/sunshine/sunshine.conf` after install, or set `ADAPTER_NAME` and extend the install to substitute it (see `sunshine/sunshine.conf.template`).
+Format is `BBBB:DD:F` (Bus:Device.Function in hex). `install.sh` substitutes `ADAPTER_NAME` into `sunshine/sunshine.conf.template` (default `00000000:01:00.0` if unset). To change after install, edit `/home/<STREAM_USER>/.config/sunshine/sunshine.conf` or re-run install with `ADAPTER_NAME=…`.
 
 Headless video uses the dummy Xorg driver with an explicit 1280×800 modeline (`xorg/99-streamdeck.conf.template`); no physical monitor is required.

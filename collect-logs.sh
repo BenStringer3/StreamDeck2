@@ -200,7 +200,7 @@ if id "$BUDDY_USER" &>/dev/null && sudo test -d "$STEAM_CLIENT_LOGS"; then
         fi
     done
     sudo chown -R "$RUN_AS_UID:$RUN_AS_GID" "$LOG_DIR/steam-logs" 2>/dev/null || true
-    # Buddy launch URI vs Steam "game running" — docs/troubleshooting.md, moondeck-game-detection-research.md
+    # Buddy launch URI vs Steam "game running" — see docs/troubleshooting.md
     log_info "Collecting Steam game-launch diagnostic summary..."
     {
         echo "=== 1. Buddy: steam:// commands, AppID watch, stream boundaries ==="

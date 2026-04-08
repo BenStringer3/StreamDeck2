@@ -203,7 +203,7 @@ if id "$BUDDY_USER" &>/dev/null; then
     if [[ ! -f "$OVERRIDE_DIR/override.conf" ]]; then
         cat > "$OVERRIDE_DIR/override.conf" << 'OVEREOF'
 # Force headless mode so Buddy does not crash when display/compositor is unavailable
-# TMPDIR=/tmp so Qt shared-memory key path matches MoonDeckStream (ENV regex IPC); see docs/env-regex-shared-memory-research.md
+# TMPDIR=/tmp so Qt shared-memory key path matches MoonDeckStream (Buddy ENV-regex IPC); see docs/troubleshooting.md
 [Service]
 Environment=NO_GUI=1
 Environment=TMPDIR=/tmp
@@ -321,7 +321,7 @@ else
     log_warn "sudoers.d/streamdeck-steam.template not found, skipping"
 fi
 
-# Install udev rules (from templates: stream user group for input isolation)
+# Install udev rules (templates: input isolation) and static *.rules (e.g. tty for headless Xorg)
 log_info "Installing udev rules..."
 for template in "$REPO_ROOT"/udev/*.rules.template; do
     [[ -f "$template" ]] || continue
@@ -330,7 +330,16 @@ for template in "$REPO_ROOT"/udev/*.rules.template; do
     sed "s|__STREAM_GROUP__|$STREAM_GROUP|g" "$template" > "/etc/udev/rules.d/$out_name"
     log_info "Installed udev rule: $out_name"
 done
-if compgen -G "$REPO_ROOT/udev/*.rules.template" >/dev/null; then
+for rule in "$REPO_ROOT"/udev/*.rules; do
+    [[ -f "$rule" ]] || continue
+    case "$rule" in
+        *.rules.template) continue ;;
+    esac
+    base="$(basename "$rule")"
+    cp "$rule" "/etc/udev/rules.d/$base"
+    log_info "Installed udev rule: $base (static)"
+done
+if compgen -G "$REPO_ROOT/udev/*.rules.template" >/dev/null || compgen -G "$REPO_ROOT/udev/*.rules" >/dev/null; then
     # Remove stale rules from previous naming schemes (61-, 99-)
     for stale in /etc/udev/rules.d/61-streamdeck-sunshine-*.rules \
                  /etc/udev/rules.d/99-streamdeck-sunshine-*.rules; do
@@ -342,8 +351,8 @@ if compgen -G "$REPO_ROOT/udev/*.rules.template" >/dev/null; then
     udevadm trigger --subsystem-match=tty
     udevadm trigger --subsystem-match=input
 fi
-if ! compgen -G "$REPO_ROOT/udev/*.rules.template" >/dev/null; then
-    log_warn "No udev rule templates found in: $REPO_ROOT/udev/"
+if ! compgen -G "$REPO_ROOT/udev/*.rules.template" >/dev/null && ! compgen -G "$REPO_ROOT/udev/*.rules" >/dev/null; then
+    log_warn "No udev rules (templates or static) found in: $REPO_ROOT/udev/"
 fi
 
 # Install Xorg config
