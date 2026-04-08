@@ -12,7 +12,6 @@ Official Sunshine reference: [configuration -- audio](https://docs.lizardbyte.de
 |-----------|--------------|---------------------------|
 | **Sunshine** | `STREAM_USER` (default `streamdeck`) | Sunshine is the process that **captures** audio and muxes it into the stream. It runs under `streamdeck-sunshine.service` with `DISPLAY=:99`. The unit sets `PULSE_SERVER=tcp:127.0.0.1:4713` to reach Buddy's PipeWire. |
 | **Games / Steam / MoonDeckStream** | `BUDDY_USER` (desktop user) | Apps are launched with `sudo -u BUDDY_USER` and **`XDG_RUNTIME_DIR=/run/user/<buddy_uid>`** so they attach to **that user's** PipeWire/Pulse session. |
-| **Pre-launched Steam** (wrapper) | `BUDDY_USER` | `scripts/moondeckstream-wrapper.sh` starts Steam on `:99` in the background; it does **not** set `PULSE_SINK`. |
 
 So: **video capture** is scoped to the isolated Xorg display (`:99`), but **application audio** flows through **the Buddy user's** sound server and is bridged to Sunshine via TCP localhost (see below).
 
@@ -118,12 +117,7 @@ The **MoonDeckStream** app command does **not** set `PULSE_SINK`:
       "cmd": "sudo -u __BUDDY_USER__ HOME=/home/__BUDDY_USER__ USER=__BUDDY_USER__ XDG_RUNTIME_DIR=/run/user/__BUDDY_UID__ DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/__BUDDY_UID__/bus TMPDIR=/tmp DISPLAY=:99 SUNSHINE_LAUNCHED=1 __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia __VK_LAYER_NV_optimus=NVIDIA_only /usr/local/bin/MoonDeckStream",
 ```
 
-So for the primary MoonDeck workflow:
-
-- Steam pre-launched by the wrapper uses **default** sink (no bridge in wrapper).
-- Buddy-driven `steam://` launches may also use **default** sink unless you add wrappers or environment elsewhere.
-
-If Sunshine's `audio_sink` points at a different node than where game audio actually plays, the stream can be **silent** while the host still has sound (or vice versa).
+So for the primary MoonDeck workflow, games launched by Buddy (via `steam-headless`) use the **default** sink. If Sunshine's `audio_sink` points at a different node than where game audio actually plays, the stream can be **silent** while the host still has sound (or vice versa).
 
 ### Sunshine config template (no explicit `audio_sink`)
 

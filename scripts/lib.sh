@@ -21,13 +21,6 @@ log_fatal() {
     exit 1
 }
 
-# Assertion helpers
-assert_command() {
-    if ! command -v "$1" &>/dev/null; then
-        log_fatal "Required command '$1' not found in PATH"
-    fi
-}
-
 assert_root() {
     if [[ $EUID -ne 0 ]]; then
         log_fatal "This script must be run as root"
@@ -211,9 +204,3 @@ detect_nvidia_driver() {
     return 1
 }
 
-# Path resolution
-get_repo_root() {
-    local script_dir
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    echo "$(cd "$script_dir/.." && pwd)"
-}

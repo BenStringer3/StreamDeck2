@@ -45,8 +45,6 @@ When building the timeline (section 4), **only include lines with timestamps in 
   - **Summary / errors:** `summary.txt`
   - **Sunshine:** `sunshine-logs/sunshine.log`, `sunshine-logs/moondeckstream.log` (app stdout/stderr when launched by Sunshine), `sunshine-diagnostics.txt`
   - **MoonDeckStream / Buddy:** `moondeckstream-stderr.log`, `moondeckstream.log`, `moondeckbuddy.log`, `moondeck-diagnostics.txt`, `journalctl-moondeckbuddy.log`
-  - **Ports / connectivity:** `port-bindings.txt` (UDP 47998, 47999, 48000 = control channel; if "(none)" → Initial Ping Timeout / Error 11), `firewall.txt`
-  - **IPC / singleton:** `ipcs.txt` (shared memory, semaphores, `qipc_*` under `/tmp` and `/run/user/*`)
   - **System:** `systemctl-*.status`, `journalctl-xorg.log`, `Xorg.99.log`, `versions.txt`
 - For each bad behavior, cite **specific files and line ranges** (or short quotes) that support or contradict candidate causes.
 
@@ -58,8 +56,8 @@ When building the timeline (section 4), **only include lines with timestamps in 
 ## 7. Validate with experiments (AGENTS.md)
 
 - Do **not** assume system state. Use **targeted experiment scripts** to validate hypotheses:
-  - Prefer **`experiment.sh`**: modify it for the current hypothesis (setup / run / teardown), document hypothesis and findings in the script, run with `sudo ./experiment.sh` when needed.
-  - For narrow checks, create a **temporary script** (e.g. `scripts/experiment-singleton.sh`) that reproduces one scenario and collects minimal, high-signal logs; remove or archive once the hypothesis is confirmed or discarded.
+  - Create or modify `scripts/experiment-*.sh` scripts for the current hypothesis (setup / run / teardown), document hypothesis and findings in the script, run with `sudo ./scripts/experiment-<name>.sh` when needed.
+  - Remove or archive experiment scripts once the hypothesis is confirmed or discarded.
 - Recommend **concrete next steps** (e.g. "Run `sudo ./experiment.sh` with step X to confirm that UDP binds only after a client connects" or "Add to collect-logs.sh: copy `/run/user/<uid>/qipc_*` listing for streamdeck and Buddy user").
 
 ## 8. Keep diagnostics in sync

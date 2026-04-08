@@ -26,7 +26,7 @@ fi
 DETAIL="$OUT_DIR/input-pipeline-detail.txt"
 SUMMARY="$OUT_DIR/input-pipeline-summary.txt"
 
-# Accumulate summary lines and exit codewdwd
+# Accumulate summary lines and exit code
 SUMMARY_LINES=()
 EXIT_CODE=0
 

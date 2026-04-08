@@ -2,10 +2,10 @@
 # MoonDeckStream wrapper: manages Steam lifecycle, clears stale singleton, runs real binary.
 # Installed to /usr/local/bin/MoonDeckStream by install.sh (placeholders __REAL_BIN__ and __PRE_ARGS__ substituted).
 #
-# Lifecycle: kill stale Steam → pre-launch Steam on :99 → run MoonDeckStream → on exit, shut down Steam.
+# Lifecycle: kill stale Steam → run MoonDeckStream → on exit, shut down Steam.
 # MoonDeckStream runs as a child (not exec) so the wrapper can clean up Steam when the stream ends.
 
-set -e
+set -euo pipefail
 
 STDERR_LOG="/tmp/moondeckstream-stderr.log"
 exec 2>>"$STDERR_LOG"

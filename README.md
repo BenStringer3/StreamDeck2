@@ -102,7 +102,7 @@ sequenceDiagram
     Note over User,Xorg: User picks game in MoonDeck
     User->>MoonDeck: Select game (Steam library)
     MoonDeck->>Buddy: Launch game (HTTP host:59999)
-    Buddy->>Steam: steam -applaunch (DISPLAY=:99)
+    Buddy->>Steam: steam-headless steam://rungameid/… (DISPLAY=:99)
     Steam->>Xorg: Game renders on :99
     Sunshine->>Xorg: Capture :99
     Sunshine->>Moonlight: Stream
@@ -115,8 +115,10 @@ sequenceDiagram
 - `install.sh` - Idempotent setup (Sunshine, MoonDeck Buddy, systemd, apps.json); runs `collect-logs.sh` on success and on failure
 - `collect-logs.sh` - Diagnostic log collection (Sunshine, Xorg, Buddy, MoonDeck); invoked automatically by install and test
 - `test-full-cycle.sh` - End-to-end test with Buddy/Sunshine health gates and summary; runs `collect-logs.sh` after manual step, on health failure, and on Ctrl+C
+- `scripts/steam-headless-wrapper.sh` - Steam wrapper for headless `:99` (strips NVIDIA GLX vars, rewrites dialog URIs); installed as `/usr/local/bin/steam-headless`
+- `scripts/moondeckstream-wrapper.sh` - MoonDeckStream wrapper (singleton cleanup, Steam lifecycle); installed as `/usr/local/bin/MoonDeckStream`
 - `docs/installing.md` - Supported distros, env vars, and install options
-- `docs/moondeck.md` - Pinned facts and links for MoonDeck Buddy and Sunshine app config
+- `docs/audio-pipeline.md` - Audio architecture: PipeWire TCP bridge, sink routing, validation
 - `docs/troubleshooting.md` - Health-check failures, Moonlight issues, firewall, and common errors
 
 ## Troubleshooting

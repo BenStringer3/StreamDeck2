@@ -33,12 +33,12 @@ This document defines the style and invariants for cursor-agent contributions to
 
 ## Experiments
 
-- Use `experiment.sh` to validate hypotheses before making assumptions about system behavior
-- Modify `experiment.sh` to reflect current hypotheses and test scenarios
-- The script must handle setup, execution, and teardown of test scenarios
+- Use `scripts/experiment-*.sh` scripts to validate hypotheses before making assumptions about system behavior
+- Each experiment script should handle setup, execution, and teardown of test scenarios
 - Collect high-signal information to inform decisions rather than assuming system state
 - Document hypotheses and findings within the script
-- When sudo is required for commands, prompt the user to run it with with `sudo ./experiment.sh`
+- When sudo is required for commands, prompt the user to run it with `sudo ./scripts/experiment-<name>.sh`
+- Experiment scripts are temporary diagnostic tools — keep them out of core commits unless they become permanent regression tests
 
 ## Configuration Files
 
