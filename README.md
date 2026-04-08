@@ -28,7 +28,7 @@ This setup uses a dedicated Xorg display server session (`:99`) isolated from yo
 
 - **Concurrent use**: Your desktop remains usable while streaming
 - **Reliable capture**: Sunshine uses X11 capture backend on the isolated display
-- **Headless-friendly**: Works without physical monitors via EDID override
+- **Headless-friendly**: Works without physical monitors via dummy Xorg and a fixed 1280×800 mode
 
 Sunshine publishes **MoonDeckStream** (and optional Desktop / Steam Big Picture for debug). MoonDeck Buddy runs as your desktop user (BUDDY_USER, e.g. the user who ran `sudo ./install.sh`) and is started automatically via systemd user services; Sunshine runs as a dedicated stream user (default `streamdeck`) and invokes MoonDeckStream, which talks to Buddy over HTTP.
 

@@ -54,14 +54,6 @@ log_info "Wrote /etc/streamdeck/install.conf (STREAM_USER=$STREAM_USER BUDDY_USE
 # Detect system state
 log_info "Probing system state..."
 
-# Check for existing EDID file (override with EDID_PATH env; see docs/installing.md)
-EDID_PATH="${EDID_PATH:-/etc/X11/edid/steamdeck-edid.bin}"
-if [[ -f "$EDID_PATH" ]]; then
-    log_info "Found existing EDID file: $EDID_PATH"
-else
-    log_warn "EDID file not found at $EDID_PATH (will use AllowEmptyInitialConfiguration)"
-fi
-
 # Disable system sunshine.service so streamdeck-sunshine is the only instance (avoids port/binding conflicts)
 if systemctl list-unit-files --type=service 2>/dev/null | grep -q '^sunshine.service'; then
     log_info "Disabling and stopping system sunshine.service (we use streamdeck-sunshine only)"
@@ -295,7 +287,6 @@ fi
 # Create directories
 log_info "Creating directories..."
 mkdir -p /etc/X11/xorg.conf.d
-mkdir -p /etc/X11/edid
 mkdir -p "$STREAM_HOME/.config/sunshine"
 mkdir -p /var/log/sunshine
 mkdir -p "/var/log/$STREAM_USER"

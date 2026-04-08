@@ -27,7 +27,6 @@ BUDDY_USER=myuser sudo ./install.sh
 | `STREAM_USER` | `streamdeck`         | System user that runs Sunshine and the isolated Xorg display. |
 | `STREAM_DISPLAY` | `:99`             | X11 display number for the streaming session. |
 | `SKIP_DEPS`   | (unset)              | Set to `1` to skip package and AUR installation (use when deps are installed manually). |
-| `EDID_PATH`   | `/etc/X11/edid/steamdeck-edid.bin` | Path to EDID file for headless display (optional). |
 | `ADAPTER_NAME`| (see below)          | GPU PCI id for Sunshine NVENC (optional; see **GPU / adapter_name**). |
 
 ## Install config file
@@ -60,7 +59,7 @@ Other scripts (`collect-logs.sh`, `check-input-pipeline.sh`, `test-full-cycle.sh
 - **Packages:** Xorg, dummy driver, openbox, xterm, nvidia-utils, wl-clipboard. Package names may differ (e.g. `xorg-x11-server-Xorg`, `xorg-x11-server-Xorg-xorg-dummy`). See `dnf search` if install fails.
 - **Sunshine / MoonDeck Buddy:** Install manually or via AppImage as on Debian.
 
-## GPU and EDID (optional)
+## GPU (optional)
 
 ### adapter_name (Sunshine)
 
@@ -74,12 +73,4 @@ lspci | grep -i nvidia
 
 Format is `BBBB:DD:F` (Bus:Device.Function in hex). Edit `/home/<STREAM_USER>/.config/sunshine/sunshine.conf` after install, or set `ADAPTER_NAME` and extend the install to substitute it (see `sunshine/sunshine.conf.template`).
 
-### EDID (headless)
-
-For headless hosts (no physical monitor), an EDID file can be used so the dummy X output reports a resolution. Default path: `/etc/X11/edid/steamdeck-edid.bin`. Override with:
-
-```bash
-EDID_PATH=/path/to/your.edid sudo ./install.sh
-```
-
-If the file is missing, Xorg may use `AllowEmptyInitialConfiguration`; behaviour depends on the Xorg/dummy driver version.
+Headless video uses the dummy Xorg driver with an explicit 1280×800 modeline (`xorg/99-streamdeck.conf.template`); no physical monitor is required.

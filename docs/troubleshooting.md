@@ -15,7 +15,7 @@ Logs are collected automatically (install and test-full-cycle both run `collect-
 
 Common issues:
 
-1. **Xorg not starting**: Check NVIDIA driver and EDID configuration
+1. **Xorg not starting**: Check NVIDIA driver, `journalctl -u streamdeck-xorg`, and `/etc/X11/xorg.conf.d/99-streamdeck.conf` (dummy driver + modeline).
 2. **Sunshine can't see display**: Verify `DISPLAY=:99` is set correctly
 3. **Encoder init fails**: Check NVENC availability with `nvidia-smi`
 4. **Buddy not running**: Start with `systemctl --user start moondeckbuddy.service` (as your desktop user, not root). If autostart was never set up: `MoonDeckBuddy --enable-autostart` then `systemctl --user enable --now moondeckbuddy.service`. See [docs/installing.md](installing.md) for BUDDY_USER.
