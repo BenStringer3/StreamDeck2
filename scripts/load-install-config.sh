@@ -22,14 +22,11 @@ else
 
     # Env overrides whatever was in config
     STREAM_USER="${STREAM_USER:-streamdeck}"
-    # BUDDY_USER detection: prefer env var, then SUDO_USER, then logname (skip root)
-    BUDDY_USER="${BUDDY_USER:-${SUDO_USER:-}}"
-    if [[ -z "$BUDDY_USER" ]]; then
-        LOGNAME_USER=$(logname 2>/dev/null || true)
-        if [[ -n "$LOGNAME_USER" && "$LOGNAME_USER" != "root" ]]; then
-            BUDDY_USER="$LOGNAME_USER"
-        fi
+    # Same rules as install.sh: config/env, else SUDO_USER; never treat root as buddy when sudo set who invoked it
+    if [[ "${BUDDY_USER:-}" == "root" ]] && [[ -n "${SUDO_USER:-}" ]]; then
+        BUDDY_USER="$SUDO_USER"
     fi
+    BUDDY_USER="${BUDDY_USER:-${SUDO_USER:-}}"
     STREAM_DISPLAY="${STREAM_DISPLAY:-:99}"
     STREAM_GROUP="${STREAM_GROUP:-$STREAM_USER}"
 fi

@@ -23,7 +23,7 @@ BUDDY_USER=myuser sudo ./install.sh
 
 | Variable      | Default              | Description |
 |---------------|----------------------|-------------|
-| `BUDDY_USER`  | `$SUDO_USER` or `logname`| Desktop user for MoonDeck Buddy and Steam (same as the user running the streamed games). Defaults to the user who ran `sudo ./install.sh` (`$SUDO_USER`), or `logname` if `$SUDO_USER` is unset. Must be set explicitly if running as root without sudo. |
+| `BUDDY_USER`  | `$SUDO_USER` | Desktop user for MoonDeck Buddy and Steam. Defaults to the user who ran `sudo ./install.sh` (`$SUDO_USER` set by sudo). If you run the installer as root without `sudo` (e.g. `su -`), set `BUDDY_USER` explicitly — it is not guessed. |
 | `STREAM_USER` | `streamdeck`         | System user that runs Sunshine and the isolated Xorg display. |
 | `STREAM_DISPLAY` | `:99`             | X11 display number for the streaming session. |
 | `SKIP_DEPS`   | (unset)              | Set to `1` to skip package and AUR installation (use when deps are installed manually). |

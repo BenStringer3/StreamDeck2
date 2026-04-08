@@ -11,20 +11,13 @@ source "$REPO_ROOT/scripts/lib.sh"
 # Configuration (BUDDY_USER defaults to user who ran sudo; see docs/installing.md)
 STREAM_USER="${STREAM_USER:-streamdeck}"
 STREAM_DISPLAY="${STREAM_DISPLAY:-:99}"
-# BUDDY_USER detection: prefer env var, then SUDO_USER, then logname (skip root)
-# Re-detect if BUDDY_USER is root (from stale config or env) and we can determine a better value
+# BUDDY_USER: env (or prior export), else SUDO_USER from sudo(8). If BUDDY_USER is root but sudo was used, prefer SUDO_USER.
 if [[ "${BUDDY_USER:-}" == "root" ]] && [[ -n "${SUDO_USER:-}" ]]; then
     BUDDY_USER="$SUDO_USER"
 fi
 BUDDY_USER="${BUDDY_USER:-${SUDO_USER:-}}"
-if [[ -z "$BUDDY_USER" ]]; then
-    LOGNAME_USER=$(logname 2>/dev/null || true)
-    if [[ -n "$LOGNAME_USER" && "$LOGNAME_USER" != "root" ]]; then
-        BUDDY_USER="$LOGNAME_USER"
-    fi
-fi
-# Require BUDDY_USER to be set (fail-fast if we can't determine it)
-[[ -n "$BUDDY_USER" ]] || log_fatal "BUDDY_USER not set and could not be determined (set BUDDY_USER env var or run via sudo)"
+# Require BUDDY_USER (root sessions without sudo: set BUDDY_USER explicitly — no logname guessing)
+[[ -n "$BUDDY_USER" ]] || log_fatal "BUDDY_USER not set and could not be determined (set BUDDY_USER or run install via sudo)"
 STREAM_GROUP="${STREAM_GROUP:-$STREAM_USER}"
 STREAM_HOME="/home/$STREAM_USER"
 
@@ -347,6 +340,13 @@ for template in "$REPO_ROOT"/udev/*.rules.template; do
     log_info "Installed udev rule: $out_name"
 done
 if compgen -G "$REPO_ROOT/udev/*.rules.template" >/dev/null; then
+    # Remove stale rules from previous naming schemes (61-, 99-)
+    for stale in /etc/udev/rules.d/61-streamdeck-sunshine-*.rules \
+                 /etc/udev/rules.d/99-streamdeck-sunshine-*.rules; do
+        [[ -f "$stale" ]] || continue
+        rm -f "$stale"
+        log_info "Removed stale udev rule: $(basename "$stale")"
+    done
     udevadm control --reload-rules
     udevadm trigger --subsystem-match=tty
     udevadm trigger --subsystem-match=input

@@ -1,5 +1,9 @@
 # Troubleshooting
 
+## install.sh: `BUDDY_USER not set`
+
+The installer needs the **desktop user** (MoonDeck Buddy / Steam). With **`sudo ./install.sh`**, `sudo` sets `SUDO_USER` and that becomes `BUDDY_USER` by default. If you run the script as **root without `sudo`** (e.g. `su -`), `SUDO_USER` is empty — set the user explicitly: `BUDDY_USER=myuser ./install.sh`. See [installing.md](installing.md).
+
 ## Health checks or test-full-cycle fail
 
 Logs are collected automatically (install and test-full-cycle both run `collect-logs.sh`). To capture logs manually, run `./collect-logs.sh`. The bundle includes:
@@ -153,6 +157,21 @@ The install also sets Buddy's `steam_exec_override` to `/usr/local/bin/steam-hea
 4. Check `content_log.txt` for `AppID <N> update started` with incomplete download — a suspended shader cache download triggers the blocking dialog.
 
 **MoonDeck "Failed to launch app in time!":** This message is from the **MoonDeck plugin** (Steam Deck), not Moonlight. MoonDeck polls Buddy for the game's app state; if the game never enters Steam's "running" list, MoonDeck hits its launch timeout and ends the stream. Root cause: the game never started on the host (see above).
+
+## Steam Deck trackpad/mouse moves the PC desktop cursor
+
+Moonlight client input (trackpad, mouse, keyboard) from the Steam Deck leaks into the PC desktop session — moving the PC cursor, typing on the PC, etc. The reverse (PC mouse on the stream) does not happen.
+
+**Root cause:** systemd-logind manages input devices tagged with `seat`. It opens them as root and passes file descriptors to the desktop compositor (Hyprland) via `TakeDevice`, completely bypassing file permissions and ACLs. Sunshine's virtual passthrough devices (`Mouse passthrough`, `Keyboard passthrough`, etc.) inherit the `seat` tag from systemd's `70-seat.rules` unless our udev rules explicitly remove it.
+
+**Diagnose:** In the test summary / `input-pipeline-summary.txt`:
+- `FAIL: Desktop has Sunshine input devices open (trackpad moves PC cursor)` confirms the leak.
+- Run `udevadm info -q all /sys/devices/virtual/input/inputN` on the parent of a passthrough event device. If `TAGS` or `CURRENT_TAGS` contain `:seat:`, this is the cause.
+- `lsof /dev/input/eventN` showing `Hyprland` (or your compositor) confirms the fd leak.
+
+**Fix:** Re-run `sudo ./install.sh`. The udev rules (`85-streamdeck-sunshine-input-isolation.rules`) must include both `TAG-="seat"` and `TAG-="uaccess"`, and must run at priority > 73 (after systemd's `71-seat.rules` and `73-seat-late.rules`). After install, restart Sunshine: `sudo systemctl restart streamdeck-sunshine`. Start a new Moonlight session.
+
+**If the issue persists after rule update:** The compositor retains open file descriptors from before the rule change. Restarting Sunshine destroys and recreates the uinput devices, forcing logind to re-evaluate. If still leaking, verify with `udevadm info` that the `seat` tag is actually removed from the parent input device (not just the child event device).
 
 ## Resolution / scaling (black borders, wrong size)
 
