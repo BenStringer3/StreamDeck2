@@ -35,7 +35,7 @@ install_moondeckstream_wrapper() {
     log_info "Installed MoonDeckStream wrapper (real_bin=$real_bin)"
 }
 
-log_info "Starting Stream Deck setup (Option B: separate Xorg session)"
+log_info "Starting Stream Deck setup (separate Xorg session)"
 
 # Check if running as root
 assert_root
@@ -100,7 +100,7 @@ else
         arch)
             log_info "Installing dependencies (Arch)..."
             pacman -Sy --noconfirm --needed \
-                xorg-server xorg-xrandr xf86-video-dummy openbox xterm nvidia-utils wl-clipboard \
+                xorg-server xorg-xrandr xf86-video-dummy xf86-input-evdev openbox xterm nvidia-utils wl-clipboard \
                 || log_fatal "Failed to install dependencies"
             log_info "Installing sunshine from AUR..."
             if ! pacman -Q sunshine &>/dev/null; then

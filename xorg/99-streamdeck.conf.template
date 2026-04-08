@@ -5,7 +5,7 @@
 #
 # Input isolation: only Sunshine virtual passthrough devices are used on this display.
 # Without this, Xorg would open all input devices (physical keyboard/mouse) and PC input
-# would leak into the stream session (e.g. Eden). See udev/61-streamdeck-sunshine-input-isolation.rules
+# would leak into the stream session (e.g. Eden). See udev/85-streamdeck-sunshine-input-isolation.rules
 # for the other direction (preventing Moonlight input from reaching the desktop).
 
 Section "ServerLayout"
@@ -86,34 +86,43 @@ Section "InputClass"
     Option         "Ignore" "true"
 EndSection
 
-# Allow Sunshine virtual devices only (passthrough + virtual gamepad for Eden)
+# Allow Sunshine virtual devices — use evdev driver (not libinput).
+# udev rule 85-streamdeck-sunshine-input-isolation sets LIBINPUT_IGNORE_DEVICE=1 to hide
+# these from the desktop compositor's libinput. xf86-input-evdev does NOT check that
+# property, so Xorg :99 can still open and use them via file permissions (GROUP/MODE).
 Section "InputClass"
     Identifier     "StreamDeck Sunshine mouse relative"
     MatchProduct   "Mouse passthrough"
+    Driver         "evdev"
     Option         "Ignore" "false"
 EndSection
 Section "InputClass"
     Identifier     "StreamDeck Sunshine mouse absolute"
     MatchProduct   "Mouse passthrough (absolute)"
+    Driver         "evdev"
     Option         "Ignore" "false"
 EndSection
 Section "InputClass"
     Identifier     "StreamDeck Sunshine keyboard"
     MatchProduct   "Keyboard passthrough"
+    Driver         "evdev"
     Option         "Ignore" "false"
 EndSection
 Section "InputClass"
     Identifier     "StreamDeck Sunshine touch"
     MatchProduct   "Touch passthrough"
+    Driver         "evdev"
     Option         "Ignore" "false"
 EndSection
 Section "InputClass"
     Identifier     "StreamDeck Sunshine pen"
     MatchProduct   "Pen passthrough"
+    Driver         "evdev"
     Option         "Ignore" "false"
 EndSection
 Section "InputClass"
     Identifier     "StreamDeck Sunshine gamepad"
     MatchProduct   "Sunshine X-Box One"
+    Driver         "evdev"
     Option         "Ignore" "false"
 EndSection

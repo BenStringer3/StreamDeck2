@@ -64,7 +64,7 @@ fi
 
 # Installed udev rules (input isolation: verify GROUP matches stream user)
 log_info "Collecting installed udev rules (streamdeck/sunshine)..."
-for f in /etc/udev/rules.d/*streamdeck* /etc/udev/rules.d/*sunshine* /etc/udev/rules.d/61-streamdeck*; do
+for f in /etc/udev/rules.d/*streamdeck* /etc/udev/rules.d/*sunshine*; do
     [[ -f "$f" ]] || continue
     sudo cp "$f" "$LOG_DIR/udev-$(basename "$f")" 2>/dev/null || true
 done
@@ -261,6 +261,26 @@ ps aux | grep -E "(Xorg|sunshine)" | grep -v grep > "$LOG_DIR/processes.txt" 2>&
 # Input devices (for concurrency check)
 log_info "Collecting input device information..."
 ls -la /dev/input/by-id/ > "$LOG_DIR/input-devices.txt" 2>&1 || true
+
+# Sunshine virtual input device udev tags (seat/uaccess cause input leakage to desktop)
+log_info "Collecting Sunshine input device udev tags..."
+{
+    for name in "Mouse passthrough" "Mouse passthrough (absolute)" "Keyboard passthrough" \
+                "Touch passthrough" "Pen passthrough" "Sunshine X-Box One (virtual) pad"; do
+        parent_path=$(grep -rl "^${name}$" /sys/devices/virtual/input/*/name 2>/dev/null | head -1 || true)
+        if [[ -n "$parent_path" ]]; then
+            parent_dir=$(dirname "$parent_path")
+            echo "=== $name ($(basename "$parent_dir")) ==="
+            udevadm info -q all "$parent_dir" 2>/dev/null | grep -E '^E: (TAGS|CURRENT_TAGS|ID_INPUT|ID_SEAT)=' || echo "(no relevant properties)"
+            event_dev=$(find "$parent_dir" -maxdepth 1 -name 'event*' -printf '%f\n' 2>/dev/null | head -1)
+            if [[ -n "$event_dev" ]]; then
+                echo "  Event device: /dev/input/$event_dev"
+                ls -la "/dev/input/$event_dev" 2>/dev/null || true
+                getfacl "/dev/input/$event_dev" 2>/dev/null | grep -v '^#' | grep -v '^$' || true
+            fi
+        fi
+    done
+} > "$LOG_DIR/sunshine-input-udev-tags.txt" 2>&1 || true
 
 # When run with sudo, make logs/ and this run owned by invoking user so next run without sudo can create new dirs
 if [[ $EUID -eq 0 ]] && [[ -n "${SUDO_UID:-}" ]]; then

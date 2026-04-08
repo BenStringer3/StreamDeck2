@@ -162,16 +162,29 @@ The install also sets Buddy's `steam_exec_override` to `/usr/local/bin/steam-hea
 
 Moonlight client input (trackpad, mouse, keyboard) from the Steam Deck leaks into the PC desktop session — moving the PC cursor, typing on the PC, etc. The reverse (PC mouse on the stream) does not happen.
 
-**Root cause:** systemd-logind manages input devices tagged with `seat`. It opens them as root and passes file descriptors to the desktop compositor (Hyprland) via `TakeDevice`, completely bypassing file permissions and ACLs. Sunshine's virtual passthrough devices (`Mouse passthrough`, `Keyboard passthrough`, etc.) inherit the `seat` tag from systemd's `70-seat.rules` unless our udev rules explicitly remove it.
+**Root cause:** Hyprland (or any Wayland compositor) uses libinput to enumerate input devices via udev, filtering on `ID_INPUT=1`. For each device discovered, wlroots calls logind's `TakeDevice`, which opens the device **as root** — completely bypassing file permissions (GROUP/MODE) and ACLs. logind passes the fd to the compositor. Sunshine's virtual passthrough devices (`Mouse passthrough`, `Keyboard passthrough`, etc.) have `ID_INPUT=1` set by systemd's `60-input-id.rules`, so libinput detects them and Hyprland receives input.
 
 **Diagnose:** In the test summary / `input-pipeline-summary.txt`:
 - `FAIL: Desktop has Sunshine input devices open (trackpad moves PC cursor)` confirms the leak.
-- Run `udevadm info -q all /sys/devices/virtual/input/inputN` on the parent of a passthrough event device. If `TAGS` or `CURRENT_TAGS` contain `:seat:`, this is the cause.
 - `lsof /dev/input/eventN` showing `Hyprland` (or your compositor) confirms the fd leak.
+- `udevadm info -q property /sys/devices/virtual/input/inputN/eventM` — if `LIBINPUT_IGNORE_DEVICE` is missing or not `1`, the fix is not applied.
 
-**Fix:** Re-run `sudo ./install.sh`. The udev rules (`85-streamdeck-sunshine-input-isolation.rules`) must include both `TAG-="seat"` and `TAG-="uaccess"`, and must run at priority > 73 (after systemd's `71-seat.rules` and `73-seat-late.rules`). After install, restart Sunshine: `sudo systemctl restart streamdeck-sunshine`. Start a new Moonlight session.
+**Fix:** Re-run `sudo ./install.sh`. The udev rules (`85-streamdeck-sunshine-input-isolation.rules`) set `LIBINPUT_IGNORE_DEVICE=1` on the child event devices, which tells libinput to skip them entirely. The desktop compositor never detects them and never calls TakeDevice. For Xorg :99 (streaming session), the InputClass in `99-streamdeck.conf` uses `Driver "evdev"` (xf86-input-evdev), which does not check `LIBINPUT_IGNORE_DEVICE` and opens devices directly via file permissions (`GROUP=streamdeck`, `MODE=0660`). Requires `xf86-input-evdev` package. After install, restart Sunshine: `sudo systemctl restart streamdeck-sunshine`. Start a new Moonlight session.
 
-**If the issue persists after rule update:** The compositor retains open file descriptors from before the rule change. Restarting Sunshine destroys and recreates the uinput devices, forcing logind to re-evaluate. If still leaking, verify with `udevadm info` that the `seat` tag is actually removed from the parent input device (not just the child event device).
+**If the issue persists after install:** The compositor retains open file descriptors from before the fix. Restarting Sunshine destroys and recreates the uinput devices, so libinput re-evaluates with the new LIBINPUT_IGNORE_DEVICE property. Verify with: `udevadm info -q property /sys/devices/virtual/input/inputN/eventM | grep LIBINPUT`.
+
+## Xorg :99 does not have Sunshine device open (no input on Steam Deck)
+
+Desktop isolation passes (trackpad doesn't move PC cursor), but no input works on the Steam Deck stream — the cursor is motionless.
+
+**Root cause:** Xorg :99 discovers input devices by enumerating udev and filtering for the `seat` tag. Additionally, Xorg checks the `ID_SEAT` property — if it is set to a value other than `seat0`, Xorg silently drops the device. `73-seat-late.rules` contains `IMPORT{parent}="ID_SEAT"`, which propagates any `ID_SEAT` set on a parent input device (e.g. `input307`) down to the child event device (e.g. `event19`). If the parent has `ID_SEAT=stream0`, the child inherits it and Xorg never adds it.
+
+**Diagnose:** In the test summary / `input-pipeline-summary.txt`:
+- `FAIL: Xorg :99 (streamdeck) does not have Sunshine device open` confirms the problem.
+- `Xorg.99.log` will show NO "config/udev: Adding input device Mouse passthrough" lines — the devices are silently dropped before driver selection.
+- `udevadm info -q property /sys/devices/virtual/input/inputN/eventM | grep ID_SEAT` — if `ID_SEAT` is set to anything other than `seat0` (e.g. `stream0`), that's the cause.
+
+**Fix:** Re-run `sudo ./install.sh`. The udev rules must NOT set `ID_SEAT` on parent devices (it was previously set as defense-in-depth but causes this exact problem). The child rules set only `GROUP`, `MODE`, `LIBINPUT_IGNORE_DEVICE=1`, and `TAG+="seat"`. Verify with `sudo ./scripts/experiment-seat-tag.sh` — check that `ID_SEAT` is `(unset)` or `seat0` on all child event devices.
 
 ## Resolution / scaling (black borders, wrong size)
 

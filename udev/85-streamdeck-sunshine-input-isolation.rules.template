@@ -1,0 +1,40 @@
+# StreamDeck Sunshine input isolation — prevent Moonlight input from reaching the desktop.
+#
+# Problem: Hyprland (Wayland compositor) uses libinput to enumerate input devices via udev.
+# For each device, wlroots calls logind's TakeDevice which opens the device AS ROOT — bypassing
+# file permissions. Result: Steam Deck trackpad/mouse input leaks to the PC desktop cursor.
+#
+# Fix: LIBINPUT_IGNORE_DEVICE=1 on child event devices. libinput skips devices with this
+# property, so Hyprland never detects them, never calls TakeDevice, never gets the fd.
+#
+# For Xorg :99 (streaming session): xf86-input-evdev instead of xf86-input-libinput.
+# evdev opens devices via file permissions (GROUP/MODE) and does NOT check LIBINPUT_IGNORE_DEVICE.
+# See 99-streamdeck.conf for InputClass Driver "evdev" config.
+#
+# Each rule uses SUBSYSTEMS/ATTRS (plural) to match child event devices (e.g. event19) by
+# traversing up to the parent for the name attribute. This sets:
+#   - GROUP + MODE: file-permission access for Xorg :99 (user streamdeck)
+#   - LIBINPUT_IGNORE_DEVICE=1: hides from desktop compositor's libinput
+#   - TAG+="seat": Xorg discovers input devices by filtering for this udev tag
+#
+# IMPORTANT: Do NOT set ID_SEAT on parent devices. 73-seat-late.rules contains
+# IMPORT{parent}="ID_SEAT" which propagates it to child event nodes. Xorg on seat0
+# silently drops any device where ID_SEAT is set to a non-seat0 value.
+
+# --- Mouse passthrough ---
+SUBSYSTEMS=="input", ATTRS{name}=="Mouse passthrough", GROUP="__STREAM_GROUP__", MODE="0660", ENV{LIBINPUT_IGNORE_DEVICE}="1", TAG+="seat"
+
+# --- Mouse passthrough (absolute) ---
+SUBSYSTEMS=="input", ATTRS{name}=="Mouse passthrough (absolute)", GROUP="__STREAM_GROUP__", MODE="0660", ENV{LIBINPUT_IGNORE_DEVICE}="1", TAG+="seat"
+
+# --- Keyboard passthrough ---
+SUBSYSTEMS=="input", ATTRS{name}=="Keyboard passthrough", GROUP="__STREAM_GROUP__", MODE="0660", ENV{LIBINPUT_IGNORE_DEVICE}="1", TAG+="seat"
+
+# --- Touch passthrough ---
+SUBSYSTEMS=="input", ATTRS{name}=="Touch passthrough", GROUP="__STREAM_GROUP__", MODE="0660", ENV{LIBINPUT_IGNORE_DEVICE}="1", TAG+="seat"
+
+# --- Pen passthrough ---
+SUBSYSTEMS=="input", ATTRS{name}=="Pen passthrough", GROUP="__STREAM_GROUP__", MODE="0660", ENV{LIBINPUT_IGNORE_DEVICE}="1", TAG+="seat"
+
+# --- Sunshine virtual gamepad ---
+SUBSYSTEMS=="input", ATTRS{name}=="Sunshine X-Box One (virtual) pad", GROUP="__STREAM_GROUP__", MODE="0660", ENV{LIBINPUT_IGNORE_DEVICE}="1", TAG+="seat"
