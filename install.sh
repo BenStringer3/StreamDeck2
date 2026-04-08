@@ -246,6 +246,40 @@ OVEREOF
         && log_info "Restarted pipewire-pulse.service for $BUDDY_USER" \
         || log_warn "Could not restart pipewire-pulse.service (user may need to log out/in)"
 
+    # Install steam-headless wrapper: rewrites steam://launch/<AppID>/dialog → steam://rungameid/<AppID>
+    # so game launches aren't blocked by an unrenderable dialog on the headless :99 display.
+    STEAM_HEADLESS_SRC="$REPO_ROOT/scripts/steam-headless-wrapper.sh"
+    STEAM_HEADLESS_DEST="/usr/local/bin/steam-headless"
+    if [[ -f "$STEAM_HEADLESS_SRC" ]]; then
+        cp "$STEAM_HEADLESS_SRC" "$STEAM_HEADLESS_DEST"
+        chmod +x "$STEAM_HEADLESS_DEST"
+        log_info "Installed steam-headless wrapper: $STEAM_HEADLESS_DEST"
+    fi
+
+    # Configure Buddy settings: steam_exec_override and env_capture_regex
+    BUDDY_SETTINGS="/home/$BUDDY_USER/.config/moondeckbuddy/settings.json"
+    if [[ -f "$BUDDY_SETTINGS" ]]; then
+        SETTINGS_CHANGED=0
+        # Set steam_exec_override to our headless wrapper (skips dialog on :99)
+        if ! grep -q '"steam_exec_override": "/usr/local/bin/steam-headless"' "$BUDDY_SETTINGS" 2>/dev/null; then
+            TMPSET="${BUDDY_SETTINGS}.new.$$"
+            python3 -c "
+import json, sys
+with open(sys.argv[1]) as f:
+    s = json.load(f)
+s['steam_exec_override'] = '/usr/local/bin/steam-headless'
+s['env_capture_regex'] = '^(?:SUNSHINE|APOLLO|DISPLAY|__NV_|__GLX_|__VK_).*'
+with open(sys.argv[2], 'w') as f:
+    json.dump(s, f, indent=4)
+    f.write('\n')
+" "$BUDDY_SETTINGS" "$TMPSET"
+            mv "$TMPSET" "$BUDDY_SETTINGS"
+            chown "$BUDDY_USER:$BUDDY_USER" "$BUDDY_SETTINGS"
+            SETTINGS_CHANGED=1
+            log_info "Configured Buddy: steam_exec_override=/usr/local/bin/steam-headless, expanded env_capture_regex"
+        fi
+    fi
+
     # Reload so override (e.g. TMPDIR=/tmp) is applied; restart so running Buddy picks up new env
     sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$BUDDY_USER")" systemctl --user daemon-reload 2>/dev/null || true
     sudo -u "$BUDDY_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$BUDDY_USER")" systemctl --user enable moondeckbuddy.service 2>/dev/null || log_warn "Could not enable moondeckbuddy.service"

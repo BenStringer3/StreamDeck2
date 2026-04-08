@@ -1,10 +1,12 @@
 #!/bin/bash
-# MoonDeckStream wrapper: sets SUNSHINE_LAUNCHED, clears stale singleton, execs real binary.
+# MoonDeckStream wrapper: manages Steam lifecycle, clears stale singleton, runs real binary.
 # Installed to /usr/local/bin/MoonDeckStream by install.sh (placeholders __REAL_BIN__ and __PRE_ARGS__ substituted).
+#
+# Lifecycle: kill stale Steam → pre-launch Steam on :99 → run MoonDeckStream → on exit, shut down Steam.
+# MoonDeckStream runs as a child (not exec) so the wrapper can clean up Steam when the stream ends.
 
 set -e
 
-# Stderr goes to log so collect-logs.sh and users can see wrapper and app errors
 STDERR_LOG="/tmp/moondeckstream-stderr.log"
 exec 2>>"$STDERR_LOG"
 
@@ -14,32 +16,52 @@ log_wrapper() {
 
 export SUNSHINE_LAUNCHED=1
 
-# Defensive: DISPLAY should be set by Sunshine (e.g. :99)
+STEAM_BIN="/usr/bin/steam"
+REAL_BIN="__REAL_BIN__"
+
 if [[ -z "${DISPLAY:-}" ]]; then
     log_wrapper "WARN: DISPLAY is not set (Sunshine typically sets DISPLAY=:99)"
 fi
 
-# Pre-launch Steam on the stream display so it is up before Buddy reacts; if Steam uses
-# singleton behavior, Buddy's later steam (e.g. game launch) will connect to this instance and run on :99.
-STEAM_BIN="/usr/bin/steam"
-if [[ -x "$STEAM_BIN" ]]; then
-    env DISPLAY=:99 WAYLAND_DISPLAY= XDG_SESSION_TYPE= "$STEAM_BIN" -gamepadui &>/dev/null &
-else
-    log_wrapper "WARN: Steam not found at $STEAM_BIN; pre-launch skipped (stream will continue)"
-fi
-
-# Defensive: real binary must exist and be executable
-REAL_BIN="__REAL_BIN__"
 if [[ ! -x "$REAL_BIN" ]]; then
     log_wrapper "FATAL: real binary not executable or missing: $REAL_BIN"
     exit 127
 fi
 
-# MoonDeckStream is a singleton (QSharedMemory + QSystemSemaphore). On SIGTERM it quick_exit()s
-# and does not run destructors. System V shm/sem segments are NOT auto-destroyed when the process
-# exits — they persist until IPC_RMID. So after killing stale PIDs we must remove the Qt IPC key
-# files (used by ftok()) so the new process gets a fresh key and create()s a new segment instead
-# of attach()ing to the orphaned one. See docs/moondeckstream-singleton-research.md.
+# --- Steam lifecycle ---
+
+shutdown_steam() {
+    if ! [[ -x "$STEAM_BIN" ]]; then return; fi
+    if ! pgrep -u "$(whoami)" -f '[s]team' &>/dev/null; then
+        log_wrapper "No Steam processes to shut down"
+        return
+    fi
+    log_wrapper "Shutting down Steam on :99"
+    timeout 10 env DISPLAY=:99 WAYLAND_DISPLAY= "$STEAM_BIN" -shutdown &>/dev/null || true
+    local i=0
+    while [[ $i -lt 15 ]] && pgrep -u "$(whoami)" -f '[s]team' &>/dev/null; do
+        sleep 1; i=$((i + 1))
+    done
+    local leftover
+    leftover=$(pgrep -u "$(whoami)" -f '[s]team' 2>/dev/null || true)
+    if [[ -n "$leftover" ]]; then
+        log_wrapper "Force-killing remaining Steam PIDs: $leftover"
+        kill -9 $leftover 2>/dev/null || true
+        sleep 1
+    fi
+}
+
+# Kill stale Steam from previous sessions so each stream starts clean.
+# This prevents accumulation and ensures fresh game-launch state.
+shutdown_steam
+
+# Buddy will start Steam via steam_exec_override (steam-headless) with the
+# game URI on the command line. Do NOT pre-launch Steam here — Steam's
+# singleton IPC unreliably forwards URIs on the headless :99 display (CEF
+# degraded mode drops IPC messages). Direct command-line URI is reliable.
+
+# --- Stale MoonDeckStream singleton cleanup ---
+
 MY_PID=$$
 STALE_PIDS=()
 for pid in $(pgrep -u "$(whoami)" -x MoonDeckStream 2>/dev/null); do
@@ -50,33 +72,26 @@ if [[ ${#STALE_PIDS[@]} -gt 0 ]]; then
     for pid in "${STALE_PIDS[@]}"; do
         kill -TERM "$pid" 2>/dev/null || true
     done
-    STALE_WAIT_MAX=50
-    STALE_POLL=0.2
-    ELAPSED=0
-    while [[ $ELAPSED -lt $STALE_WAIT_MAX ]]; do
-        STILL_ALIVE=0
+    local_wait=0
+    while [[ $local_wait -lt 50 ]]; do
+        all_gone=1
         for pid in "${STALE_PIDS[@]}"; do
-            kill -0 "$pid" 2>/dev/null && STILL_ALIVE=1
+            kill -0 "$pid" 2>/dev/null && all_gone=0
         done
-        [[ $STILL_ALIVE -eq 0 ]] && break
-        sleep "$STALE_POLL"
-        ELAPSED=$(( ELAPSED + 1 ))
+        [[ $all_gone -eq 1 ]] && break
+        sleep 0.2; local_wait=$((local_wait + 1))
     done
-    if [[ $ELAPSED -ge $STALE_WAIT_MAX ]]; then
-        log_wrapper "WARN: stale PIDs did not exit within ${STALE_WAIT_MAX}×${STALE_POLL}s, proceeding anyway"
+    if [[ $local_wait -ge 50 ]]; then
+        log_wrapper "WARN: stale PIDs did not exit within 10s, proceeding anyway"
     else
-        log_wrapper "Stale PIDs gone (waited ${ELAPSED}×${STALE_POLL}s)"
+        log_wrapper "Stale PIDs gone"
     fi
     sleep 0.2
 fi
 
-# Remove orphaned Qt IPC key files for MoonDeckStream so the new process create()s a new
-# segment instead of attach()ing to the orphaned one. Keys match moondeck-buddy
-# SingleInstanceGuard: SHA1("MoonDeckStream_shared_mem_key") and ("MoonDeckStream_mem_lock_key").
-# Qt may create under /tmp, /tmp/$UID, or XDG_RUNTIME_DIR (e.g. /run/user/$UID). See docs/moondeckstream-singleton-research.md.
+# Qt IPC key-file cleanup (MoonDeckStream singleton uses QSharedMemory/QSystemSemaphore)
 HASH_SHM=$(echo -n "MoonDeckStream_shared_mem_key" | sha1sum 2>/dev/null | cut -c1-40)
 HASH_SEM=$(echo -n "MoonDeckStream_mem_lock_key" | sha1sum 2>/dev/null | cut -c1-40)
-# Diagnostic: log hashes and candidate dirs/files before cleanup (so we can see why "Removed..." might never appear)
 log_wrapper "Singleton cleanup: HASH_SHM=$HASH_SHM HASH_SEM=$HASH_SEM"
 CLEANUP_DIRS=(/tmp "/tmp/$(id -u)")
 [[ -n "${XDG_RUNTIME_DIR:-}" ]] && [[ -d "$XDG_RUNTIME_DIR" ]] && CLEANUP_DIRS+=( "$XDG_RUNTIME_DIR" )
@@ -94,13 +109,7 @@ for dir in "${CLEANUP_DIRS[@]}"; do
 done
 log_wrapper "Singleton cleanup: removed $REMOVED_COUNT key file(s)"
 
-# TEMPORARY WORKAROUND: When key-file cleanup found nothing, orphaned System V shm/sem may still
-# exist (Qt key path/format can differ from wrapper's hashes; on SIGTERM MoonDeckStream uses
-# quick_exit() so destructors never run and IPC is never released). Remove orphaned shm (nattch 0)
-# and all semaphores owned by us so the new process can create() fresh IPC instead of attach()ing.
-# Prefer upstream fix: MoonDeckStream should handle SIGTERM with graceful shutdown so destructors
-# run and IPC is released. See docs/moondeck-buddy-issue-sigterm-graceful-shutdown.md and
-# docs/troubleshooting.md.
+# Orphaned System V IPC fallback (MoonDeckStream quick_exit() doesn't run destructors)
 if [[ $REMOVED_COUNT -eq 0 ]] && command -v ipcs &>/dev/null && command -v ipcrm &>/dev/null; then
     ME=$(whoami)
     while read -r shmid; do
@@ -109,9 +118,6 @@ if [[ $REMOVED_COUNT -eq 0 ]] && command -v ipcs &>/dev/null && command -v ipcrm
             log_wrapper "Removed orphaned shm segment: $shmid (owner=$ME, nattch=0)"
         fi
     done < <(ipcs -m 2>/dev/null | awk -v u="$ME" 'NR>1 && $3==u && $6==0 {print $2}')
-    # TEMPORARY WORKAROUND: We cannot identify which sem is MoonDeckStream's; remove all of our
-    # semaphores. This may affect other Qt apps (e.g. MoonDeckBuddy) if they use semaphores in the
-    # same user session. Remove this block once MoonDeckStream does graceful SIGTERM shutdown.
     while read -r semid; do
         [[ -n "$semid" ]] || continue
         if ipcrm -s "$semid" 2>/dev/null; then
@@ -120,6 +126,22 @@ if [[ $REMOVED_COUNT -eq 0 ]] && command -v ipcs &>/dev/null && command -v ipcrm
     done < <(ipcs -s 2>/dev/null | awk -v u="$ME" 'NR>1 && $3==u {print $2}')
 fi
 
-log_wrapper "Exec-ing real binary: $REAL_BIN (PID $$)"
+# --- Run MoonDeckStream (child process, not exec) ---
+# Run as child so we can shut down Steam after exit. Forward SIGTERM so Sunshine's
+# kill signal reaches MoonDeckStream.
+
+log_wrapper "Starting MoonDeckStream: $REAL_BIN (wrapper PID $$)"
 # __PRE_ARGS__ is empty for AUR binary, or "--exec MoonDeckStream" for AppImage
-exec "$REAL_BIN" __PRE_ARGS__ "$@"
+"$REAL_BIN" __PRE_ARGS__ "$@" &
+CHILD_PID=$!
+
+trap 'log_wrapper "SIGTERM received, forwarding to MoonDeckStream ($CHILD_PID)"; kill -TERM $CHILD_PID 2>/dev/null' TERM
+trap 'log_wrapper "SIGINT received, forwarding to MoonDeckStream ($CHILD_PID)"; kill -INT $CHILD_PID 2>/dev/null' INT
+
+wait $CHILD_PID 2>/dev/null
+MDS_EXIT=$?
+
+log_wrapper "MoonDeckStream exited ($MDS_EXIT), cleaning up Steam"
+shutdown_steam
+
+exit $MDS_EXIT

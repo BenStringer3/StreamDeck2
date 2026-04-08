@@ -169,7 +169,7 @@ Steam (and the game) start correctly, but they appear on your **physical monitor
 
 **Root cause:** Steam (and any game launched via MoonDeck) is being started **in your desktop session** (e.g. by MoonDeck Buddy when it reacts to "stream started" / game launch from the Deck). Buddy runs in your graphical session (Wayland/X), so when it spawns Steam it does not set `DISPLAY=:99`. Steam inherits the session display (e.g. Wayland) and appears on the physical monitor. Sunshine captures :99, where only the dummy desktop is drawn → black screen with cursor on the Deck.
 
-The install **pre-launches Steam on :99** when a stream starts (from the MoonDeckStream wrapper). If games still appear on the desktop, Steam’s singleton may not be connecting (Buddy’s `steam` may start a new instance on the desktop). In that case, consider adding a steam wrapper that forces `DISPLAY=:99` when streaming (see e.g. the troubleshooting analysis in the log bundle’s `TROUBLESHOOTING-ANALYSIS.md`).
+The install configures Buddy’s `steam_exec_override` to `/usr/local/bin/steam-headless` and captures `DISPLAY=:99` via `env_capture_regex`. Buddy starts Steam directly with the game URI on `:99`. If games still appear on the desktop, Buddy may not be capturing `DISPLAY` — check that `env_capture_regex` includes `DISPLAY` in `~/.config/moondeckbuddy/settings.json`, and restart Buddy after any settings change.
 
 **What to do:**
 
@@ -187,19 +187,44 @@ Steam Big Picture appears on the stream (pre-launch worked), but after several s
 - Buddy then logs **"Executing: … steam … steam://launch/\<AppID\>/dialog"** and "Started watching AppID: \<id\>".
 - No further Buddy or Steam log about the game process starting; then "Stream is ending" / "CLIENT DISCONNECTED".
 
-**Possible causes:**
+**Root cause (three layers):**
+
+1. **GLX vendor mismatch** (primary). The Sunshine systemd service sets `__GLX_VENDOR_LIBRARY_NAME=nvidia` (for NVENC encoding). Buddy captures this via `env_capture_regex` and passes it to Steam. But Xorg `:99` uses the `dummy` driver, which only provides `DRISWRAST` (Mesa software GLX). NVIDIA's client-side GLX library cannot negotiate with Mesa's server-side GLX, so Steam's CEF compositor fails: `CreateOutputWindow: failed to acquire a gl context`. In degraded mode, CEF silently drops all game launch commands — `-applaunch`, `steam://rungameid`, and `steam://launch/.../dialog` all fail.
+
+2. **`steam://launch/<AppID>/dialog` blocks.** Even with working GLX, Buddy sends this URI which renders a launch configuration dialog. On the headless display nobody can dismiss it.
+
+3. **Steam's singleton IPC is unreliable on `:99`.** When Steam is pre-launched and a URI is sent later via a second `steam` invocation, the running instance in degraded-CEF mode silently ignores the IPC message.
+
+**Fix:** Re-run `sudo ./install.sh`. The `steam-headless` wrapper (`/usr/local/bin/steam-headless`) now:
+
+- **Unsets `__GLX_VENDOR_LIBRARY_NAME` and `__NV_PRIME_RENDER_OFFLOAD`** so Mesa's client-side GLX matches the swrast server. Games use Vulkan (Proton/DXVK), not GLX, so rendering is unaffected — only Steam's UI compositor uses GLX.
+- **Rewrites `steam://launch/<AppID>/dialog` → `steam://rungameid/<AppID>`** to bypass the blocking dialog.
+
+The install also:
+
+- Sets Buddy's `steam_exec_override` to `/usr/local/bin/steam-headless`
+- Expands `env_capture_regex` so Buddy captures `DISPLAY=:99` and Vulkan vars from the stream
+- Removes the MoonDeckStream wrapper's Steam pre-launch (avoids unreliable IPC)
+
+After install, restart Buddy: `systemctl --user restart moondeckbuddy.service`
+
+Verify:
+
+```bash
+grep steam_exec_override ~/.config/moondeckbuddy/settings.json
+# "steam_exec_override": "/usr/local/bin/steam-headless"
+```
+
+**Diagnostic steps:**
+
+1. In the log bundle, check **steam-game-launch.txt** sections 1-5. If section 1 shows `Started watching AppID` but sections 2-3 show no `Adding process`, and section 4 shows "failed to acquire a gl context", the GLX mismatch is likely active.
+2. Run `sudo ./scripts/experiment-game-launch.sh` — Test A launches with `__GLX_VENDOR_LIBRARY_NAME=nvidia` (expected fail), Test B launches without it (expected pass). If both fail, the issue is deeper than GLX.
+
+**Other possible causes (if wrapper already installed):**
 
 1. **Game slow to start** — First launch, shader compile, or heavy title can take 30+ seconds; the stream was closed before the window appeared. Try waiting 60–90 s after selecting the game before concluding it didn’t launch.
 2. **Game failed to start** — Crash or missing Vulkan/display; check Steam logs: `~/.local/share/Steam/logs/gameprocess_log.txt`, `content_log.txt`, and `webhelper.txt` (and .previous) for the run.
-3. **Game on physical monitor** — If the game window opens on the host monitor instead of the stream, you still see “no game” on the Deck. That would mean the game process inherited the desktop display (see “Steam/game on physical monitor” above; a steam wrapper with `DISPLAY=:99` when streaming may be needed).
-4. **Launch URI uses `/dialog`** — MoonDeck Buddy often runs `steam://launch/<AppID>/dialog`. That can open a **Steam launch or compatibility dialog** (Proton, cloud sync, first run). On a minimal X11 session (`:99`), the dialog may be behind Big Picture, off-screen, or only obvious on a physical monitor; until it is dismissed, the game may not enter Steam’s “running” state and MoonDeck can time out. Confirm with `steam-logs/` in the collected bundle (after `collect-logs.sh`) and by checking the host display during repro.
-
-**What to do:**
-
-1. In the log bundle, check **steam-game-launch.txt** (sections 1–2: Buddy launch command and Steam PIDs; 3–4: running list and journal; 7: shader_log if launch was slow; GAME_LAUNCH_RESULT at end) and **steam-logs/gameprocess_log.txt**. If there is no "Add \<AppID\> to running list" for the run and no "Adding process … for gameID" in the journal excerpt, the game never started on the host — Buddy sent the launch but Steam never registered the game (e.g. launch not handed off to the :99 Steam, or :99 Steam failed to start the game).
-2. Reproduce and wait at least 60–90 s after selecting the game; note whether the game appears on the Deck or on the physical monitor.
-3. If it still doesn’t appear, inspect full Steam logs in the bundle (steam-logs/content_log.txt, gameprocess_log.txt) and look for the game process and any errors.
-4. If the stream closes without you pressing Stop, the client (Moonlight) disconnected; possible causes include MoonDeck/Moonlight closing when the game doesn’t appear within a timeout. Host logs do not contain the client’s reason.
+3. **Game on physical monitor** — See “Steam/game on physical monitor” above.
 
 **MoonDeck "Failed to launch app in time!" / "didn't start app in time":** This message is from the **MoonDeck plugin** (Steam Deck), not Moonlight. MoonDeck polls Buddy every second for the game's app state; Buddy gets "game is running" from **Steam** on the host (Steam's running list / "Adding process for gameID"). If the game never enters that state, MoonDeck never sees "Running", hits its launch timeout, shows this message, and ends the stream (so Moonlight disconnects). On the host you see "App exited with code [0]" and Buddy "Stream is ending". Root cause: the game never started on the host (see steps 1–3 above). See [moondeck-game-detection-research.md](moondeck-game-detection-research.md) for the full detection chain.
 
