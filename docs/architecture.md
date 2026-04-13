@@ -8,7 +8,7 @@ The host runs a **dedicated Xorg session** on a separate display number (default
 
 - **Sunshine** runs as **`STREAM_USER`** (default `streamdeck`) under `streamdeck-sunshine.service`, captures video from that X session, and encodes with **NVENC** (NVIDIA GPU required today — see `install.sh` NVIDIA detection).
 - **MoonDeck Buddy** and **Steam** run as **`BUDDY_USER`** (default: the user who ran `sudo ./install.sh`, overridable with `BUDDY_USER=…`). Buddy is started via **systemd user** units: `install.sh` writes a **`moondeckbuddy.service.d` override** with **`NO_GUI=1`** and **`TMPDIR=/tmp`** (Buddy must not depend on the desktop compositor for the headless stream path; `TMPDIR` aligns shared-memory IPC with MoonDeckStream). It also runs **`systemctl --user enable --now moondeckbuddy-gui-session.service`** when configuring Buddy (upstream unit shipped with Buddy; harmless if missing).
-- **MoonDeckStream** is the Sunshine “app” you connect to from Moonlight. `install.sh` renders **`apps.json`** so Sunshine starts MoonDeckStream with `sudo -u BUDDY_USER` and the correct `DISPLAY`, `XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS`, and `TMPDIR=/tmp` (Buddy ↔ MoonDeckStream shared-memory key path). **`/etc/sudoers.d/streamdeck-steam`** grants narrowly scoped `NOPASSWD` for that pattern.
+- **MoonDeckStream** is the Sunshine “app” you connect to from Moonlight. Sunshine still reads application definitions from **`apps.json`** under the stream user’s config dir (see `SUNSHINE_CONFIG_DIR` in `streamdeck-sunshine.service`). `install.sh` renders **`sunshine/apps.json.template`** → **`~STREAM_USER/.config/sunshine/apps.json`** so Sunshine starts MoonDeckStream with `sudo -u BUDDY_USER` and the correct `DISPLAY`, `XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS`, and `TMPDIR=/tmp` (Buddy ↔ MoonDeckStream shared-memory key path). **`/etc/sudoers.d/streamdeck-steam`** grants narrowly scoped `NOPASSWD` for that pattern.
 
 If the distribution ships a system **`sunshine.service`**, **`install.sh` stops and disables it** so only **`streamdeck-sunshine.service`** owns the streaming ports.
 
@@ -25,32 +25,44 @@ Moonlight input is forwarded through **Sunshine virtual HID** devices. **`udev/8
 ```mermaid
 flowchart TB
     subgraph host["Linux host"]
-        subgraph systemd_system["systemd (system)"]
-            xorg_svc["streamdeck-xorg.service"]
-            sunshine_svc["streamdeck-sunshine.service"]
+        subgraph supervision["Supervision"]
+            direction LR
+            subgraph systemd_system["systemd (system)"]
+                direction LR
+                xorg_svc["streamdeck-xorg.service"]
+                sunshine_svc["streamdeck-sunshine.service"]
+            end
+            subgraph systemd_user["systemd user · BUDDY_USER"]
+                direction LR
+                buddy_svc["moondeckbuddy.service<br>(NO_GUI=1, TMPDIR=/tmp)"]
+                buddy_gui_svc["moondeckbuddy-gui-session.service"]
+            end
         end
-        subgraph streamdeck["User: STREAM_USER (default streamdeck)"]
-            Xorg["Xorg STREAM_DISPLAY\n(dummy driver, 1280×800)"]
-            Openbox["Openbox\n(window manager)"]
-            Sunshine["Sunshine\n(X11 capture, NVENC)"]
-        end
-        subgraph buddy_user["User: BUDDY_USER (desktop)"]
-            Buddy["MoonDeck Buddy\n(HTTP :59999, Steam state)"]
-            MDS["MoonDeckStream\n(launched by Sunshine via sudo)"]
-            PipeWire["PipeWire-Pulse\n(tcp 127.0.0.1:4713)"]
-        end
-        subgraph systemd_user["systemd (user, BUDDY_USER)"]
-            buddy_svc["moondeckbuddy.service\n(NO_GUI=1, TMPDIR=/tmp)"]
-            buddy_gui_svc["moondeckbuddy-gui-session.service"]
-        end
-        subgraph config["Config and permissions"]
-            apps["apps.json\n(Desktop, Steam Big Picture, MoonDeckStream)"]
-            sudoers["/etc/sudoers.d/streamdeck-steam\n(STREAM_USER → run as BUDDY_USER)"]
-            xorg_conf["/etc/X11/xorg.conf.d/99-streamdeck.conf"]
-            udev_rules["udev rules\n(input isolation + seat tag)"]
+
+        subgraph data["Runtime"]
+            direction LR
+            subgraph config["Config · permissions"]
+                direction TB
+                apps["apps.json<br>(Desktop, Steam BP, MoonDeckStream)"]
+                xorg_conf["/etc/X11/xorg.conf.d/99-streamdeck.conf"]
+                udev_rules["udev rules<br>(input isolation + seat tag)"]
+                sudoers["/etc/sudoers.d/streamdeck-steam"]
+            end
+            Moonlight["Moonlight<br>(Steam Deck)"]
+            subgraph streamdeck["User STREAM_USER · display"]
+                direction TB
+                Sunshine["Sunshine<br>(X11 capture, NVENC)"]
+                Xorg["Xorg STREAM_DISPLAY<br>(dummy 1280×800)"]
+                Openbox["Openbox"]
+            end
+            subgraph buddy_user["User BUDDY_USER"]
+                direction TB
+                PipeWire["PipeWire-Pulse<br>(tcp 127.0.0.1:4713)"]
+                MDS["MoonDeckStream<br>(sudo from Sunshine)"]
+                Buddy["MoonDeck Buddy<br>(HTTP :59999)"]
+            end
         end
     end
-    Moonlight["Moonlight (Steam Deck)"]
 
     sunshine_svc -.->|"After=, Requires="| xorg_svc
     xorg_svc --> Xorg
@@ -58,15 +70,18 @@ flowchart TB
     sunshine_svc --> Sunshine
     buddy_svc --> Buddy
     buddy_gui_svc --> Buddy
+
+    apps -.-> Sunshine
     xorg_conf -.-> Xorg
-    udev_rules -.-> streamdeck
-    Sunshine --> apps
-    Sunshine -->|"X11 video"| Xorg
-    Sunshine -->|"PULSE_SERVER"| PipeWire
-    Sunshine -->|"sudo -u BUDDY_USER … MoonDeckStream"| MDS
-    MDS -->|"HTTP / Qt shared memory"| Buddy
-    Moonlight <-->|"stream (UDP/TCP)"| Sunshine
+    udev_rules -.-> Xorg
     sudoers -.->|"NOPASSWD"| MDS
+
+    Moonlight <-->|"UDP/TCP"| Sunshine
+    Sunshine -->|"X11 video"| Xorg
+    Xorg --> Openbox
+    Sunshine -->|"PULSE_SERVER"| PipeWire
+    Sunshine -->|"sudo … MoonDeckStream"| MDS
+    MDS -->|"HTTP / Qt shm"| Buddy
 ```
 
 ## Stream and game-launch sequence
@@ -85,7 +100,7 @@ sequenceDiagram
     Note over User,Xorg: Start stream
     User->>Moonlight: Select host, launch MoonDeckStream
     Moonlight->>Sunshine: Request stream (launch app)
-    Sunshine->>Sunshine: apps.json → sudo -u BUDDY_USER … MoonDeckStream
+    Sunshine->>Sunshine: apps.json: sudo -u BUDDY_USER … MoonDeckStream
     Sunshine->>MDS: exec as BUDDY_USER (DISPLAY, TMPDIR, dbus, …)
     MDS->>Buddy: Connect (HTTP :59999 / shared-memory IPC)
     Buddy-->>MDS: Ready
