@@ -20,6 +20,31 @@ Sunshine (`STREAM_USER`) cannot open the Buddy user’s Pulse/PipeWire socket un
 
 Moonlight input is forwarded through **Sunshine virtual HID** devices. **`udev/85-streamdeck-sunshine-input-isolation.rules`** (rendered from the template under `install.sh`) sets **`TAG+="seat"`**, **`GROUP`/`MODE`** for **`STREAM_GROUP`**, and **`ENV{LIBINPUT_IGNORE_DEVICE}=1`** on those nodes so **desktop compositors using libinput** ignore them, while the streaming Xorg stack uses **`xf86-input-evdev`**, which opens devices by node permissions and does not consult `LIBINPUT_IGNORE_DEVICE`. The Xorg config (**`xorg/99-streamdeck.conf`**) restricts which devices the `:99` server uses. Do **not** set `ID_SEAT` on parent devices in custom rules — see [troubleshooting.md](troubleshooting.md).
 
+## Per-game apps (stream-scoped lifecycle)
+
+Optional apps generated from `~BUDDY_USER/.config/streamdeck/games.json` (setup: [installing.md](installing.md#per-game-sunshine-apps)). Each one ties a game's whole lifetime to one stream, the way a context manager ties a resource to a block. Moonlight's Wake-on-LAN and Sunshine's app start are the setup, the game process is the body, and Sunshine's quit handling is the teardown:
+
+```mermaid
+sequenceDiagram
+    participant Deck as Moonlight (client)
+    participant Sun as Sunshine (STREAM_USER)
+    participant Inh as systemd-inhibit
+    participant Game as game command (BUDDY_USER)
+    Deck->>Sun: Wake-on-LAN, then stream "inFAMOUS"
+    Sun->>Inh: run app cmd
+    Inh->>Inh: take sleep lock (mode=block)
+    Inh->>Game: sudo -u BUDDY_USER command
+    Note over Game: game runs on the stream display
+    Deck->>Sun: quit app (end of stream)
+    Sun->>Game: ask to exit, wait exit-timeout, then terminate
+    Game-->>Inh: exits
+    Inh-->>Sun: exits, sleep lock released
+```
+
+- **Sleep:** the blocking inhibitor exists exactly as long as the game process. A host suspend policy that honours `block` inhibitors (e.g. `systemd-inhibit --list` checks) cannot suspend mid-stream, and nothing needs to keep the host awake afterwards. A polkit rule lets `STREAM_USER` take the lock.
+- **Privilege:** `STREAM_USER` may run only the exact listed commands as `BUDDY_USER` (generated sudoers rule).
+- **Not covered:** a client that disconnects without quitting leaves the app running (and the host awake) until a client reconnects and quits it. Launchers that daemonise (e.g. `steam steam://rungameid/...`) escape Sunshine's process tracking, so they can't be per-game apps.
+
 ## System diagram
 
 ```mermaid
@@ -122,7 +147,7 @@ sequenceDiagram
 
 | Path | Role |
 |------|------|
-| `install.sh` | Idempotent setup: deps, Buddy, Xorg/Sunshine units, udev, `sunshine.conf`, `apps.json`, sudoers; health checks; runs `collect-logs.sh` on success and failure |
+| `install.sh` | Idempotent setup: deps, Buddy, Xorg/Sunshine units, udev, `sunshine.conf`, `apps.json`, sudoers, per-game apps (`games.json`); health checks; runs `collect-logs.sh` on success and failure |
 | `collect-logs.sh` | Diagnostics: journald, Sunshine/Xorg logs, GPU, udev, `apps.json`, Buddy journal, Steam client logs, input-device udev tags |
 | `test-full-cycle.sh` | Runs `install.sh`, health gates, manual Moonlight step, `collect-logs.sh`, `scripts/check-input-pipeline.sh`; Ctrl+C collects logs |
 | `scripts/lib.sh` | Shared logging, health checks (`check_*`), helpers |
@@ -137,6 +162,7 @@ sequenceDiagram
 | `pipewire/10-tcp-localhost.conf` | Copied into Buddy user’s `pipewire-pulse.conf.d` for the audio TCP bridge |
 | `udev/*.rules.template`, `udev/*.rules` | Input isolation for Sunshine passthrough; static rules (e.g. TTY) for headless Xorg |
 | `sudoers.d/streamdeck-steam.template` | NOPASSWD for stream user to run Buddy-scoped launch commands |
+| `polkit/50-streamdeck-inhibit.rules.template` | Lets the stream user hold a blocking sleep inhibitor for per-game apps (installed only with `games.json`) |
 
 ## References
 

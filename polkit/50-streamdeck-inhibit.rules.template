@@ -1,0 +1,10 @@
+// Lets the Sunshine stream user hold a "block" sleep inhibitor while a per-game app is streamed
+// (systemd-inhibit wraps the game command in apps.json). logind's default policy for
+// org.freedesktop.login1.inhibit-block-sleep is auth_admin_keep for processes outside a login
+// session, which is how Sunshine runs. Installed by install.sh only when games.json exists.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.login1.inhibit-block-sleep" &&
+        subject.user == "__STREAM_USER__") {
+        return polkit.Result.YES;
+    }
+});

@@ -189,3 +189,22 @@ Desktop isolation passes (trackpad doesn't move PC cursor), but no input works o
 ## Resolution / scaling (black borders, wrong size)
 
 Set Moonlight display resolution to native where possible. Be aware of external display being primary on the Deck.
+
+## Per-game app: game keeps running after the stream ends
+
+The client left the stream without quitting the app, or the command escaped Sunshine's process tracking.
+
+1. **Client setting:** in Moonlight, enable *Quit app after stream* (`quitAppAfter=true` in `Moonlight.conf`). Otherwise ending the stream only disconnects, and the app keeps running (and keeps the host awake) until a client quits it.
+2. **Daemonising command:** the app's command must stay in the foreground. A launcher that hands off and exits (for example `steam steam://rungameid/...`) leaves the game outside Sunshine's process group, so quit stops only the launcher. Check `per-game-apps.txt` in the log bundle for the command, and `ps -o pid,ppid,args` to see whether the game's parent chain reaches Sunshine.
+3. **Game swallows SIGTERM:** Sunshine stops the app with SIGTERM, then terminates it after `exit-timeout`. A program linked against SDL (SDL2/SDL3) gets SDL's default SIGINT/SIGTERM handlers, which only queue an SDL quit event. If the program never reads that event (e.g. RPCS3, which uses SDL only for controller input), SIGTERM does nothing: `grep SigCgt /proc/<pid>/status` shows bit 15 set. Launch it with `SDL_NO_SIGNAL_HANDLERS=1` so SIGTERM keeps its default action.
+
+## Per-game app: host suspends mid-stream
+
+While a per-game app runs, `systemd-inhibit --list` must show a `block` sleep lock from `STREAM_USER` (`Who: streamdeck`, `Why: streaming`). If it is missing:
+
+- `/etc/polkit-1/rules.d/50-streamdeck-inhibit.rules` is absent, i.e. `install.sh` ran without `games.json`. Without the rule, logind refuses the lock for Sunshine (it runs outside a login session) and the app fails to start, with a polkit "Access denied" error in the app log (`~STREAM_USER/.config/sunshine/<name>.log`).
+- The host's suspend policy ignores inhibitors. It must treat `block` sleep inhibitors as "do not suspend".
+
+## Per-game app: game runs but ignores the controller
+
+Without Steam in the launch path there is no Steam Input virtual pad. The game sees Sunshine's virtual controller directly; on Linux it enumerates as **"Xbox Series X Controller"** (SDL) / `Sunshine (libvirtualhid) X-Box Series Controller` (evdev). Bind the game to that device. For RPCS3, use the **SDL** handler with device `Xbox Series X Controller 1`. SDL maps by button role, so the bindings don't depend on the virtual device's evdev codes.
