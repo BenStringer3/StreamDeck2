@@ -84,8 +84,12 @@ else
     if [[ -f /etc/os-release ]]; then
         # shellcheck source=/dev/null
         source /etc/os-release
-        OS_ID="${ID:-}"
-        [[ -z "$OS_ID" && -n "${ID_LIKE:-}" ]] && OS_ID="${ID_LIKE%% *}"
+        # Derivatives (e.g. Omarchy: ID=omarchy, ID_LIKE=arch) match through ID_LIKE.
+        for candidate in ${ID:-} ${ID_LIKE:-}; do
+            case "$candidate" in
+                arch|debian|ubuntu|fedora) OS_ID="$candidate"; break ;;
+            esac
+        done
     fi
 
     case "${OS_ID:-}" in
@@ -123,7 +127,7 @@ else
             command -v sunshine &>/dev/null || log_warn "Sunshine not in PATH. Install manually (see docs/installing.md)"
             ;;
         *)
-            log_fatal "Unsupported distro (ID=$OS_ID). Install dependencies manually (see docs/installing.md) and set SKIP_DEPS=1 to run the rest of install."
+            log_fatal "Unsupported distro (ID=${ID:-}, ID_LIKE=${ID_LIKE:-}). Install dependencies manually (see docs/installing.md) and set SKIP_DEPS=1 to run the rest of install."
             ;;
     esac
 fi
