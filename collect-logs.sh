@@ -34,6 +34,7 @@ collect_systemctl_status streamdeck-sunshine.service "$LOG_DIR/systemctl-sunshin
 log_info "Collecting journalctl logs..."
 collect_journalctl streamdeck-xorg.service "$LOG_DIR/journalctl-xorg.log" 200
 collect_journalctl streamdeck-sunshine.service "$LOG_DIR/journalctl-sunshine.log" 200
+collect_journalctl streamdeck-idle-quit.service "$LOG_DIR/journalctl-idle-quit.log" 200
 
 # Sunshine logs (sudo: /var/log/sunshine often owned by stream user)
 log_info "Collecting Sunshine logs..."
@@ -117,6 +118,17 @@ fi
 if sudo test -f "$SUNSHINE_CONFIG_DIR/apps.json"; then
     sudo cp "$SUNSHINE_CONFIG_DIR/apps.json" "$LOG_DIR/sunshine-apps.json"
 fi
+# Per-game apps: source list, generated sudoers/polkit rules, and who currently blocks sleep
+{
+    echo "=== /home/$BUDDY_USER/.config/streamdeck/games.json ==="
+    sudo cat "/home/$BUDDY_USER/.config/streamdeck/games.json" 2>/dev/null || echo "(absent: no per-game apps)"
+    echo; echo "=== /etc/sudoers.d/streamdeck-games ==="
+    sudo cat /etc/sudoers.d/streamdeck-games 2>/dev/null || echo "(absent)"
+    echo; echo "=== /etc/polkit-1/rules.d/50-streamdeck-inhibit.rules ==="
+    sudo cat /etc/polkit-1/rules.d/50-streamdeck-inhibit.rules 2>/dev/null || echo "(absent)"
+    echo; echo "=== systemd-inhibit --list (a streamed game holds a 'block' sleep lock from user $STREAM_USER) ==="
+    systemd-inhibit --list --no-pager 2>&1 || true
+} > "$LOG_DIR/per-game-apps.txt"
 mkdir -p "$LOG_DIR/sunshine-logs"
 # App output logs (e.g. eden-totk.log) - Sunshine may write to config or log dir
 sudo bash -c "for f in $SUNSHINE_CONFIG_DIR/*.log; do [[ -f \"\$f\" ]] && cp \"\$f\" $LOG_DIR/sunshine-logs/\$(basename \"\$f\"); done" 2>/dev/null || true

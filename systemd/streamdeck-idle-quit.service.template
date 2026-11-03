@@ -1,0 +1,17 @@
+[Unit]
+Description=Stream Deck idle quit (stops per-game apps nobody is streaming)
+After=streamdeck-sunshine.service
+
+[Service]
+Type=simple
+# BUDDY_USER owns the game processes, so it can stop them without root.
+User=__BUDDY_USER__
+Environment="STREAMDECK_IDLE_QUIT_SECONDS=1800"
+ExecStart=/usr/local/bin/streamdeck-idle-quit
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

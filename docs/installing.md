@@ -40,23 +40,53 @@ After a successful install, `/etc/streamdeck/install.conf` is created (mode 644)
 
 Other scripts (`collect-logs.sh`, `check-input-pipeline.sh`, `test-full-cycle.sh`) read this file so they use the same users and paths. You can override by setting the same variables in the environment.
 
+## Per-game Sunshine apps
+
+A per-game app lets a Moonlight client start one game directly, e.g. from a Steam Deck library shortcut running `moonlight stream <host> "<name>"`. The game's lifetime follows the stream:
+
+- **Start:** Moonlight wakes the host (Wake-on-LAN to the paired host's MAC) and Sunshine runs the game's command as `BUDDY_USER` under `systemd-inhibit --what=sleep --mode=block`, so the host cannot suspend mid-stream.
+- **Quit:** when the client quits the app (Moonlight's *Quit app after stream* setting, or quitting from the Moonlight menu), Sunshine asks the game to exit, waits `exit-timeout` (10 s), then terminates it. `systemd-inhibit` exits with the game and the sleep block is released.
+- **Disconnect without quitting:** the game keeps running so the client can resume. After 30 minutes with no client streaming, `streamdeck-idle-quit.service` stops it the same way. Change the timeout with `STREAMDECK_IDLE_QUIT_SECONDS` in a drop-in (`systemctl edit streamdeck-idle-quit`).
+
+List the games in **`~BUDDY_USER/.config/streamdeck/games.json`** (machine-local, not in the repo) and re-run `sudo ./install.sh`:
+
+```json
+[
+  {"name": "inFAMOUS", "command": ["/home/ben/.local/bin/rpcs3-streamdeck", "/home/ben/Games/ps3/inFamous-BCES00220/PS3_GAME/USRDIR/EBOOT.BIN"]}
+]
+```
+
+`command` is an argv list. The first element must be an executable absolute path, and no argument may contain whitespace or `, : = \ "`, because the command becomes both a sudoers rule and the Sunshine `cmd`. The command must stay in the foreground (no daemonising launcher), or Sunshine loses track of it. That rules out `steam steam://rungameid/...`: Steam hands the launch to its own process, so quitting the stream would not stop the game.
+
+From the file, `install.sh` generates:
+
+| Generated | Purpose |
+|---|---|
+| Entries appended to `~STREAM_USER/.config/sunshine/apps.json` | One app per game, with `exit-timeout` |
+| `/etc/sudoers.d/streamdeck-games` | `STREAM_USER` may run exactly each listed command as `BUDDY_USER` |
+| `/etc/polkit-1/rules.d/50-streamdeck-inhibit.rules` | `STREAM_USER` may take a blocking sleep inhibitor (logind denies this to processes outside a login session by default) |
+
+| `/usr/local/bin/streamdeck-idle-quit` + `streamdeck-idle-quit.service` | Stops a game no client has streamed for 30 minutes |
+
+Without the file, the sudoers and polkit rules and the idle-quit service are removed.
+
 ## Per-distro dependency notes
 
 ### Arch Linux
 
-- **Packages:** `xorg-server`, `xorg-xrandr`, `xf86-video-dummy`, `openbox`, `xterm`, `nvidia-utils`, `wl-clipboard`.
+- **Packages:** `xorg-server`, `xorg-xrandr`, `xf86-video-dummy`, `openbox`, `xterm`, `nvidia-utils`, `wl-clipboard`, `jq`.
 - **Sunshine:** AUR package `sunshine` (requires [yay](https://github.com/Jguer/yay) or another AUR helper).
 - **MoonDeck Buddy:** AUR `moondeckbuddy-appimage` or AppImage fallback (install script downloads to `/opt/moondeckbuddy/` if needed).
 
 ### Debian / Ubuntu
 
-- **Packages:** `xserver-xorg`, `xserver-xorg-video-dummy`, `openbox`, `xterm`, `nvidia-utils`, `wl-clipboard`. Install with `apt-get install -y ...`.
+- **Packages:** `xserver-xorg`, `xserver-xorg-video-dummy`, `openbox`, `xterm`, `nvidia-utils`, `wl-clipboard`, `jq`. Install with `apt-get install -y ...`.
 - **Sunshine:** Not in default repos. Use [LizardByte instructions](https://docs.lizardbyte.dev/projects/sunshine/) (e.g. PPA or AppImage). Ensure `sunshine` is on PATH before or after install.
 - **MoonDeck Buddy:** AppImage from [releases](https://github.com/FrogTheFrog/moondeck-buddy/releases); place in `/opt/moondeckbuddy/MoonDeckBuddy.AppImage` or let the install script download it (when `curl` is available).
 
 ### Fedora
 
-- **Packages:** Xorg, dummy driver, openbox, xterm, nvidia-utils, wl-clipboard. Package names may differ (e.g. `xorg-x11-server-Xorg`, `xorg-x11-server-Xorg-xorg-dummy`). See `dnf search` if install fails.
+- **Packages:** Xorg, dummy driver, openbox, xterm, nvidia-utils, wl-clipboard, jq. Package names may differ (e.g. `xorg-x11-server-Xorg`, `xorg-x11-server-Xorg-xorg-dummy`). See `dnf search` if install fails.
 - **Sunshine / MoonDeck Buddy:** Install manually or via AppImage as on Debian.
 
 ## GPU (optional)
