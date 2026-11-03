@@ -42,10 +42,11 @@ Other scripts (`collect-logs.sh`, `check-input-pipeline.sh`, `test-full-cycle.sh
 
 ## Per-game Sunshine apps
 
-A per-game app lets a Moonlight client start one game directly, e.g. from a Steam Deck library shortcut running `moonlight stream <host> "<name>"`. The game lives exactly as long as the stream:
+A per-game app lets a Moonlight client start one game directly, e.g. from a Steam Deck library shortcut running `moonlight stream <host> "<name>"`. The game's lifetime follows the stream:
 
 - **Start:** Moonlight wakes the host (Wake-on-LAN to the paired host's MAC) and Sunshine runs the game's command as `BUDDY_USER` under `systemd-inhibit --what=sleep --mode=block`, so the host cannot suspend mid-stream.
 - **Quit:** when the client quits the app (Moonlight's *Quit app after stream* setting, or quitting from the Moonlight menu), Sunshine asks the game to exit, waits `exit-timeout` (10 s), then terminates it. `systemd-inhibit` exits with the game and the sleep block is released.
+- **Disconnect without quitting:** the game keeps running so the client can resume. After 30 minutes with no client streaming, `streamdeck-idle-quit.service` stops it the same way. Change the timeout with `STREAMDECK_IDLE_QUIT_SECONDS` in a drop-in (`systemctl edit streamdeck-idle-quit`).
 
 List the games in **`~BUDDY_USER/.config/streamdeck/games.json`** (machine-local, not in the repo) and re-run `sudo ./install.sh`:
 
@@ -65,7 +66,9 @@ From the file, `install.sh` generates:
 | `/etc/sudoers.d/streamdeck-games` | `STREAM_USER` may run exactly each listed command as `BUDDY_USER` |
 | `/etc/polkit-1/rules.d/50-streamdeck-inhibit.rules` | `STREAM_USER` may take a blocking sleep inhibitor (logind denies this to processes outside a login session by default) |
 
-Without the file, the sudoers and polkit rules are removed.
+| `/usr/local/bin/streamdeck-idle-quit` + `streamdeck-idle-quit.service` | Stops a game no client has streamed for 30 minutes |
+
+Without the file, the sudoers and polkit rules and the idle-quit service are removed.
 
 ## Per-distro dependency notes
 

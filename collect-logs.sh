@@ -34,6 +34,7 @@ collect_systemctl_status streamdeck-sunshine.service "$LOG_DIR/systemctl-sunshin
 log_info "Collecting journalctl logs..."
 collect_journalctl streamdeck-xorg.service "$LOG_DIR/journalctl-xorg.log" 200
 collect_journalctl streamdeck-sunshine.service "$LOG_DIR/journalctl-sunshine.log" 200
+collect_journalctl streamdeck-idle-quit.service "$LOG_DIR/journalctl-idle-quit.log" 200
 
 # Sunshine logs (sudo: /var/log/sunshine often owned by stream user)
 log_info "Collecting Sunshine logs..."

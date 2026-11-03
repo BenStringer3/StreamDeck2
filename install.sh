@@ -413,7 +413,9 @@ fi
 # (exit-timeout, then forced), and systemd-inhibit holds a sleep block for exactly that lifetime.
 # Generated from the file: the apps.json entries, a sudoers rule per exact command (the stream user
 # runs it as BUDDY_USER), and a polkit rule letting the stream user take the block (logind denies
-# processes outside a login session by default). Without the file, the sudoers and polkit rules are removed.
+# processes outside a login session by default). A client that disconnects without quitting leaves the app
+# running, so streamdeck-idle-quit.service stops a game nobody has streamed for 30 minutes.
+# Without the file, the sudoers and polkit rules and the idle-quit service are removed.
 BUDDY_HOME="$(getent passwd "$BUDDY_USER" | cut -d: -f6)"
 GAMES_JSON="$BUDDY_HOME/.config/streamdeck/games.json"
 GAMES_SUDOERS="/etc/sudoers.d/streamdeck-games"
@@ -466,6 +468,7 @@ if [[ -f "$GAMES_JSON" ]]; then
     mv "$APPS_JSON.tmp" "$APPS_JSON"
     chown "$STREAM_USER:$STREAM_USER" "$APPS_JSON"
     log_info "Per-game apps installed: $(jq -r '[.[].name] | join(", ")' "$GAMES_JSON")"
+    install -m 0755 "$REPO_ROOT/scripts/idle-quit.sh" /usr/local/bin/streamdeck-idle-quit
 else
     rm -f "$GAMES_SUDOERS" "$INHIBIT_RULE"
 fi
@@ -484,6 +487,7 @@ substitute_systemd() {
         -e "s|__STREAM_GROUP__|$STREAM_GROUP|g" \
         -e "s|__STREAM_DISPLAY__|$STREAM_DISPLAY|g" \
         -e "s|__STREAM_HOME__|$STREAM_HOME|g" \
+        -e "s|__BUDDY_USER__|$BUDDY_USER|g" \
         "$src" > "$dest"
 }
 
@@ -502,6 +506,16 @@ else
     log_fatal "Sunshine unit template not found: $SUNSHINE_TPL"
 fi
 
+IDLE_QUIT_UNIT=/etc/systemd/system/streamdeck-idle-quit.service
+if [[ -f "$GAMES_JSON" ]]; then
+    substitute_systemd "$REPO_ROOT/systemd/streamdeck-idle-quit.service.template" "$IDLE_QUIT_UNIT"
+    log_info "Installed streamdeck-idle-quit.service"
+elif [[ -f "$IDLE_QUIT_UNIT" ]]; then
+    systemctl disable --now streamdeck-idle-quit.service
+    rm -f "$IDLE_QUIT_UNIT" /usr/local/bin/streamdeck-idle-quit
+    log_info "Removed streamdeck-idle-quit.service (no per-game apps)"
+fi
+
 # Reload systemd after installing all units
 systemctl daemon-reload
 
@@ -509,6 +523,9 @@ systemctl daemon-reload
 log_info "Enabling services..."
 systemctl enable streamdeck-xorg.service
 systemctl enable streamdeck-sunshine.service
+if [[ -f "$GAMES_JSON" ]]; then
+    systemctl enable streamdeck-idle-quit.service
+fi
 
 # Kill any stray Sunshine processes that might conflict
 log_info "Checking for conflicting Sunshine processes..."
@@ -523,6 +540,9 @@ log_info "Starting services..."
 systemctl restart streamdeck-xorg.service || log_error "Failed to start streamdeck-xorg"
 sleep 2  # Give Xorg time to start
 systemctl restart streamdeck-sunshine.service || log_error "Failed to start streamdeck-sunshine"
+if [[ -f "$GAMES_JSON" ]]; then
+    systemctl restart streamdeck-idle-quit.service || log_error "Failed to start streamdeck-idle-quit"
+fi
 sleep 12  # Give Sunshine time to initialize, test encoders, and recover from system tray crashes
 
 # Health checks
@@ -568,6 +588,16 @@ if check_sunshine_service; then
 else
     log_error "✗ streamdeck-sunshine.service is not active"
     HEALTH_FAILED=1
+fi
+
+# Idle quit check (per-game apps only)
+if [[ -f "$GAMES_JSON" ]]; then
+    if systemctl is-active --quiet streamdeck-idle-quit.service; then
+        log_info "✓ streamdeck-idle-quit.service is active"
+    else
+        log_error "✗ streamdeck-idle-quit.service is not active (journalctl -u streamdeck-idle-quit)"
+        HEALTH_FAILED=1
+    fi
 fi
 
 # Sunshine logs check

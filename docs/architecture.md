@@ -35,15 +35,21 @@ sequenceDiagram
     Inh->>Inh: take sleep lock (mode=block)
     Inh->>Game: sudo -u BUDDY_USER command
     Note over Game: game runs on the stream display
-    Deck->>Sun: quit app (end of stream)
-    Sun->>Game: ask to exit, wait exit-timeout, then terminate
+    alt client quits the app
+        Deck->>Sun: quit app (end of stream)
+        Sun->>Game: ask to exit, wait exit-timeout, then terminate
+    else client disconnects without quitting
+        Note over Game: idle quit: no NVENC session for 30 min
+        Game->>Game: streamdeck-idle-quit sends SIGTERM, then SIGKILL
+    end
     Game-->>Inh: exits
     Inh-->>Sun: exits, sleep lock released
 ```
 
 - **Sleep:** the blocking inhibitor exists exactly as long as the game process. A host suspend policy that honours `block` inhibitors (e.g. `systemd-inhibit --list` checks) cannot suspend mid-stream, and nothing needs to keep the host awake afterwards. A polkit rule lets `STREAM_USER` take the lock.
+- **Abandoned games:** a client that disconnects without quitting (the Deck sleeps, or Moonlight closes) leaves the app running so it can resume. Sunshine has no idle timeout, so `streamdeck-idle-quit.service` (runs as `BUDDY_USER`) stops a per-game app once the GPU has had no NVENC session for `STREAMDECK_IDLE_QUIT_SECONDS` (1800). Sunshine encodes only while a client streams. The service sends SIGTERM to `BUDDY_USER`'s processes in the app's process group, the same signal as Sunshine's quit, then SIGKILL after 10 s.
 - **Privilege:** `STREAM_USER` may run only the exact listed commands as `BUDDY_USER` (generated sudoers rule).
-- **Not covered:** a client that disconnects without quitting leaves the app running (and the host awake) until a client reconnects and quits it. Launchers that daemonise (e.g. `steam steam://rungameid/...`) escape Sunshine's process tracking, so they can't be per-game apps.
+- **Not covered:** launchers that daemonise (e.g. `steam steam://rungameid/...`) escape Sunshine's process tracking, so they can't be per-game apps.
 
 ## System diagram
 
@@ -162,6 +168,8 @@ sequenceDiagram
 | `pipewire/10-tcp-localhost.conf` | Copied into Buddy user’s `pipewire-pulse.conf.d` for the audio TCP bridge |
 | `udev/*.rules.template`, `udev/*.rules` | Input isolation for Sunshine passthrough; static rules (e.g. TTY) for headless Xorg |
 | `sudoers.d/streamdeck-steam.template` | NOPASSWD for stream user to run Buddy-scoped launch commands |
+| `scripts/idle-quit.sh` | Installed as `/usr/local/bin/streamdeck-idle-quit` (stops per-game apps nobody streams; installed only with `games.json`) |
+| `systemd/streamdeck-idle-quit.service.template` | Runs the idle quit as `BUDDY_USER` |
 | `polkit/50-streamdeck-inhibit.rules.template` | Lets the stream user hold a blocking sleep inhibitor for per-game apps (installed only with `games.json`) |
 
 ## References
